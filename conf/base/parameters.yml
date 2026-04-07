@@ -1,0 +1,26 @@
+simulation:
+  n_sistemas: 10
+  n_condicoes_por_sistema: 10
+  num_periodos: 1
+  dt: 0.01
+
+intervals:
+  omega_min: 0.2
+  omega_max: 15.0
+  x0_min: -6.0
+  x0_max: 6.0
+  v0_min: -6.0
+  v0_max: 6.0
+
+seed: 42
+
+visualization:
+  width_3d: 1200
+  height_3d: 900
+  width_2d: 1400
+  height_2d: 1000
+  legend_font_size: 12
+  hover_font_size: 12
+
+outputs:
+  base_csv: "base_ohs.csv"

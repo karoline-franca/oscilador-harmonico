@@ -1,0 +1,54 @@
+condicoes_iniciais:
+  type: pandas.CSVDataset
+  filepath: data/02_intermediate/condicoes_iniciais.csv
+  load_args:
+    sep: ';'
+    encoding: 'latin-1'
+  save_args:
+    index: False
+    sep: ';'
+    encoding: 'latin-1'
+
+frequencias_angulares:
+  type: pandas.CSVDataset
+  filepath: data/02_intermediate/frequencias_angulares.csv
+  load_args:
+    sep: ';'
+    encoding: 'latin-1'
+  save_args:
+    index: False
+    sep: ';'
+    encoding: 'latin-1'
+
+solucao_rk4:
+  type: pickle.PickleDataset
+  filepath: data/03_primary/solucao_rk4.pkl
+
+base_oscilador:
+  type: pandas.CSVDataset
+  filepath: data/04_feature/base_ohs.csv
+  load_args:
+    sep: ';'
+    encoding: 'latin-1'
+  save_args:
+    index: False
+    sep: ';'
+    encoding: 'latin-1'
+
+metadata_simulacao:
+  type: json.JSONDataset
+  filepath: data/04_feature/metadata_simulacao.json
+  save_args:
+    indent: 2
+
+grafico_3d:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/espaco_fases_3d.html
+  plotly_args:
+    auto_open: False
+
+grafico_2d:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/espaco_fases_2d.html
+  plotly_args:
+    auto_open: False
