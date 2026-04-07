@@ -31,7 +31,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=gera_condicoes_iniciais_node,
             inputs="parameters",
             outputs="condicoes_iniciais",
-            name="node_gerar_condicoes_iniciais",
+            name="node_gera_condicoes_iniciais",
             tags=["generation", "initial_conditions"]
         ),
         
@@ -39,7 +39,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=gera_frequencias_angulares_node,
             inputs="parameters",
             outputs="frequencias_angulares",
-            name="node_gerar_frequencias_angulares",
+            name="node_gera_frequencias_angulares",
             tags=["generation", "frequencies"]
         ),
         
@@ -47,7 +47,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=executa_simulacao_rk4_node,
             inputs=["condicoes_iniciais", "frequencias_angulares", "parameters"],
             outputs=["solucao_rk4", "metadata_simulacao"],
-            name="node_executar_simulacao_rk4",
+            name="node_executa_simulacao_rk4",
             tags=["simulation", "rk4"]
         ),
         
@@ -55,7 +55,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=gera_base_consolidada_node,
             inputs=["solucao_rk4", "condicoes_iniciais", "frequencias_angulares", "metadata_simulacao"],
             outputs="base_oscilador",
-            name="node_gerar_base_consolidada",
+            name="node_gera_base_consolidada",
             tags=["data", "database"]
         ),
         
@@ -63,7 +63,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=cria_visualizacoes_node,
             inputs=["solucao_rk4", "frequencias_angulares"],
             outputs=None,
-            name="node_criar_visualizacoes",
+            name="node_cria_visualizacoes",
             tags=["visualization", "plotly"]
         ),
         
