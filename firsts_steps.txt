@@ -1,0 +1,14 @@
+- Clone o repositório na sua máquina
+- Vá até o diretório raiz do projeto:
+	cd C:\Users\...\oscilador-harmonico
+- Instale o ambiente para execução do pipeline kedro: 
+	(base) C:\Users\...\oscilador-harmonico>conda env create -f environment.yml
+- Ative o ambiente instalado:
+	conda activate ohs_env
+- Execute o pipeline kedro com os parâmetros de preferência:
+	kedro run --params "simulation.n_sistemas={int},simulation.n_condicoes_por_sistema={int}"
+- Os htmls dos gráficos se encontram em:
+	...\data\08_reporting
+- A base consolidada com as simulações se encontra em:
+	...\data\04_feature
+	
