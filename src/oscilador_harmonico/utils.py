@@ -14,15 +14,12 @@ CORES_PALETA = [
 
 
 def formatar_numero_pt_br(numero):
-    """Formata número no padrão brasileiro."""
-    if isinstance(numero, (int, float)):
-        if abs(numero) < 1000:
-            return f"{numero:.3f}".replace('.', ',')
-        else:
-            partes = f"{numero:.3f}".split('.')
-            parte_inteira = '{:,.0f}'.format(int(partes[0])).replace(',', '.')
-            return f"{parte_inteira},{partes[1]}"
-    return str(numero)
+    """Formata número no padrão brasileiro com 3 casas decimais."""
+    try:
+        valor = float(numero)
+        return f"{valor:.3f}".replace('.', ',')
+    except (ValueError, TypeError):
+        return str(numero)
 
 
 def cria_grafico_3d(solucao, sistemas_descricao):
