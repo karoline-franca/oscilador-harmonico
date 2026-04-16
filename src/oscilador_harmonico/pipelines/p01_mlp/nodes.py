@@ -1,0 +1,295 @@
+"""
+Nodes do pipeline MLP.
+"""
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+from typing import Dict, Any, Tuple
+import joblib
+
+from .model import MLP
+from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
+
+
+def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
+    """
+    Prepara os dados para treinamento da MLP.
+    
+    Entrada: [x0, v0, frequencia_angular]
+    Saída: [posicao, velocidade, tempo]
+    """
+    for col in base_oscilador.columns:
+        if base_oscilador[col].dtype == 'object':
+            try:
+                base_oscilador[col] = base_oscilador[col].astype(str).str.replace(',', '.').astype(float)
+            except:
+                pass
+    
+    features_entrada = ['x0', 'v0', 'frequencia_angular']
+    features_saida = ['posicao', 'velocidade', 'tempo']
+    
+    X_raw = base_oscilador[features_entrada].values.astype(np.float32)
+    y_raw = base_oscilador[features_saida].values.astype(np.float32)
+    
+    print(f"Tamanho original de X (entrada): {X_raw.shape}")
+    print(f"Tamanho original de y (saída): {y_raw.shape}")
+    
+    scaler_X = StandardScaler()
+    scaler_y = StandardScaler()
+    
+    X_scaled = scaler_X.fit_transform(X_raw)
+    y_scaled = scaler_y.fit_transform(y_raw)
+    
+    X_temp, X_val, y_temp, y_val = train_test_split(
+        X_scaled, y_scaled, test_size=0.15, random_state=42
+    )
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.176, random_state=42
+    )
+    
+    print(f"Treino: {X_train.shape}, Teste: {X_test.shape}, Validação: {X_val.shape}")
+    
+    input_dim = X_train.shape[1]
+    output_dim = y_train.shape[1]
+    
+    return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim, scaler_X, scaler_y
+
+
+def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
+    """Cria o modelo MLP."""
+    mlp_config = parameters.get('mlp', {})
+    
+    hidden_dims = mlp_config.get('hidden_dims', [64, 128, 64])
+    dropout = mlp_config.get('dropout', 0.1)
+    
+    model = MLP(
+        input_dim=input_dim,
+        hidden_dims=hidden_dims,
+        output_dim=output_dim,
+        dropout=dropout
+    )
+    
+    print(f"Modelo MLP criado:")
+    print(f"  Input dim: {input_dim} (x0, v0, ω)")
+    print(f"  Hidden dims: {hidden_dims}")
+    print(f"  Output dim: {output_dim} (x, v, t)")
+    print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    
+    return model
+
+
+def treina_mlp_node(
+    model: nn.Module,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    parameters: Dict[str, Any]
+) -> Tuple[nn.Module, Dict]:
+    """Treina o modelo MLP."""
+    mlp_config = parameters.get('mlp', {})
+    
+    batch_size = mlp_config.get('batch_size', 512)
+    epochs = mlp_config.get('epochs', 100)
+    learning_rate = mlp_config.get('learning_rate', 0.003)
+    weight_decay = mlp_config.get('weight_decay', 0.00005)
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Dispositivo: {device}")
+    
+    model = model.to(device)
+    
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
+    
+    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
+    
+    history = {
+        'train_loss': [],
+        'test_loss': []
+    }
+    
+    print("\n=== INICIANDO TREINAMENTO MLP ===")
+    print(f"Entrada: (x0, v0, ω) -> Saída: (x, v, t)")
+    print(f"Batch size: {batch_size}")
+    print(f"Epochs: {epochs}")
+    print(f"Learning rate: {learning_rate}")
+    
+    for epoch in range(epochs):
+        # treino
+        model.train()
+        epoch_train_loss = 0
+        
+        for batch_X, batch_y in train_loader:
+            batch_X = batch_X.to(device)
+            batch_y = batch_y.to(device)
+            
+            optimizer.zero_grad()
+            predictions = model(batch_X)
+            loss = criterion(predictions, batch_y)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_train_loss += loss.item()
+        
+        epoch_train_loss /= len(train_loader)
+        
+        # teste
+        model.eval()
+        epoch_test_loss = 0
+        with torch.no_grad():
+            for batch_X, batch_y in test_loader:
+                batch_X = batch_X.to(device)
+                batch_y = batch_y.to(device)
+                predictions = model(batch_X)
+                loss = criterion(predictions, batch_y)
+                epoch_test_loss += loss.item()
+        
+        epoch_test_loss /= len(test_loader)
+        
+        history['train_loss'].append(float(epoch_train_loss))
+        history['test_loss'].append(float(epoch_test_loss))
+        
+        scheduler.step(epoch_test_loss)
+        
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Test Loss: {epoch_test_loss:.6f}")
+    
+    print("\n=== TREINAMENTO CONCLUÍDO ===")
+    
+    return model, history
+
+
+def avalia_mlp_node(
+    model: nn.Module,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    scaler_y: StandardScaler
+) -> Dict[str, float]:
+    """Avalia o modelo MLP nos dados de validação."""
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    model.eval()
+    
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
+    
+    with torch.no_grad():
+        predictions_scaled = model(X_val_tensor).cpu().numpy()
+    
+    predictions = scaler_y.inverse_transform(predictions_scaled)
+    y_val_original = scaler_y.inverse_transform(y_val)
+    
+    mse_pos = float(mean_squared_error(y_val_original[:, 0], predictions[:, 0]))
+    mse_vel = float(mean_squared_error(y_val_original[:, 1], predictions[:, 1]))
+    mse_tempo = float(mean_squared_error(y_val_original[:, 2], predictions[:, 2]))
+    
+    r2_pos = float(r2_score(y_val_original[:, 0], predictions[:, 0]))
+    r2_vel = float(r2_score(y_val_original[:, 1], predictions[:, 1]))
+    r2_tempo = float(r2_score(y_val_original[:, 2], predictions[:, 2]))
+    
+    metrics = {
+        'mse_posicao': mse_pos,
+        'mse_velocidade': mse_vel,
+        'mse_tempo': mse_tempo,
+        'r2_posicao': r2_pos,
+        'r2_velocidade': r2_vel,
+        'r2_tempo': r2_tempo
+    }
+    
+    print("\n=== AVALIAÇÃO DO MODELO MLP ===")
+    print(f"MSE Posição: {mse_pos:.6f}")
+    print(f"MSE Velocidade: {mse_vel:.6f}")
+    print(f"MSE Tempo: {mse_tempo:.6f}")
+    print(f"R² Posição: {r2_pos:.4f}")
+    print(f"R² Velocidade: {r2_vel:.4f}")
+    print(f"R² Tempo: {r2_tempo:.4f}")
+    
+    return metrics
+
+
+def visualiza_previsoes_mlp_node(
+    model: nn.Module,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    scaler_y: StandardScaler,
+    parameters: Dict[str, Any]
+) -> None:
+    """
+    Visualiza as previsões do modelo MLP.
+    
+    Args:
+        model: Modelo treinado
+        X_val: Dados de validação
+        y_val: Targets de validação
+        scaler_y: Scaler dos targets
+        parameters: Parâmetros do pipeline
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    model.eval()
+    
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
+    
+    with torch.no_grad():
+        predictions_scaled = model(X_val_tensor).cpu().numpy()
+    
+    predictions = scaler_y.inverse_transform(predictions_scaled)
+    y_val_original = scaler_y.inverse_transform(y_val)
+    
+    fig = cria_grafico_previsoes_mlp(
+        predictions=predictions,
+        y_true=y_val_original,
+        titulo="Previsões do Modelo MLP - Dados de Validação"
+    )
+    
+    fig.write_html("data/08_reporting/previsoes_mlp.html")
+    print("Gráfico de previsões salvo em data/08_reporting/previsoes_mlp.html")
+    
+    fig.show()
+    
+    return None
+
+
+def salva_modelo_mlp_node(
+    model: nn.Module,
+    scaler_X: StandardScaler,
+    scaler_y: StandardScaler,
+    parameters: Dict[str, Any]
+) -> None:
+    """Salva o modelo treinado e os scalers."""
+    mlp_config = parameters.get('mlp', {})
+    
+    save_path = mlp_config.get('save_path', 'data/07_model_outputs/mlp_model.pth')
+    
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'scaler_X': scaler_X,
+        'scaler_y': scaler_y,
+        'input_dim': 3,
+        'output_dim': 3,
+        'hidden_dims': mlp_config.get('hidden_dims', [64, 128, 64]),
+        'dropout': mlp_config.get('dropout', 0.1)
+    }, save_path)
+    
+    print(f"\nModelo MLP salvo em: {save_path}")
+    print(f"  Entrada Normalizada: (x0, v0, ω)")
+    print(f"  Saída Normalizada: (x, v, t)")
+    
+    return None

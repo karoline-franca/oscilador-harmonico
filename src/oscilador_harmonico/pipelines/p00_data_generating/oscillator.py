@@ -4,7 +4,7 @@ Classe para resolver a equação do oscilador harmônico simples usando PyTorch 
 
 import numpy as np
 import torch
-from oscilador_harmonico.rk4 import RungeKutta4
+from .rk4 import RungeKutta4
 
 
 class OsciladorHarmonicoPyTorch:
@@ -39,8 +39,8 @@ class OsciladorHarmonicoPyTorch:
         """
         Define as equações do movimento para múltiplas condições iniciais e múltiplos sistemas
         
-        estados: tensor de forma (n_condicoes, n_sistemas, 2)
-        retorna: tensor de forma (n_condicoes, n_sistemas, 2)
+        estados: tensor da forma (n_condicoes, n_sistemas, 2)
+        retorna: tensor da forma (n_condicoes, n_sistemas, 2)
         """
         x = estados[:, :, 0]
         v = estados[:, :, 1]
@@ -75,7 +75,7 @@ class OsciladorHarmonicoPyTorch:
         solucao_rk4 = self.rk4.solve(
             func=self.equacoes_movimento,
             condicoes_iniciais=cond_iniciais_expand,
-            t_span=(0, t_final),
+            t_range=(0, t_final),
             dt=dt
         )
         

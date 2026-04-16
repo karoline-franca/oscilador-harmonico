@@ -52,3 +52,19 @@ grafico_2d:
   filepath: data/08_reporting/espaco_fases_2d.html
   plotly_args:
     auto_open: False
+
+modelo_mlp:
+  type: pickle.PickleDataset
+  filepath: data/07_model_outputs/mlp_model.pth
+
+modelo_mlp_treinado:
+  type: pickle.PickleDataset
+  filepath: data/07_model_outputs/mlp_model_trained.pth
+
+history_mlp:
+  type: pickle.PickleDataset
+  filepath: data/07_model_outputs/mlp_history.pkl
+
+metricas_mlp:
+  type: json.JSONDataset
+  filepath: data/08_reporting/metricas_mlp.json

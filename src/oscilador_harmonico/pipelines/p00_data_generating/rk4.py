@@ -46,7 +46,7 @@ class RungeKutta4:
         
         return estados_novos
     
-    def solve(self, func, condicoes_iniciais, t_span, dt, save_every=1):
+    def solve(self, func, condicoes_iniciais, t_range, dt, save_every=1):
         """
         Resolve o sistema de EDOs usando RK4.
         
@@ -54,14 +54,14 @@ class RungeKutta4:
             func (callable): Função que define o sistema de EDOs.
                             Deve ter assinatura: func(t, estados) -> derivadas
             condicoes_iniciais (torch.Tensor): Condições iniciais (n_condicoes, n_sistemas, n_variaveis)
-            t_span (tuple): Intervalo de tempo (t_inicial, t_final)
+            t_range (tuple): Intervalo de tempo (t_inicial, t_final)
             dt (float): Passo de tempo
             save_every (int): Salvar a cada 'save_every' passos (para reduzir memória)
             
         Returns:
             dict: Dicionário com os resultados da simulação
         """
-        t0, tf = t_span
+        t0, tf = t_range
         n_passos = int((tf - t0) / dt) + 1
         
         indices_salvos = list(range(0, n_passos, save_every))

@@ -1,11 +1,11 @@
 simulation:
-  n_sistemas: 10
-  n_condicoes_por_sistema: 10
+  n_sistemas: 5
+  n_condicoes_por_sistema: 512
   num_periodos: 1
   dt: 0.01
 
 intervals:
-  omega_min: 0.2
+  omega_min: 0.5
   omega_max: 15.0
   x0_min: -6.0
   x0_max: 6.0
@@ -24,3 +24,12 @@ visualization:
 
 outputs:
   base_csv: "base_ohs.csv"
+
+mlp:
+  hidden_dims: [64, 128, 64]       # camadas ocultas
+  dropout: 0.1                     # dropout para regularização
+  batch_size: 512                  # tamanho do batch
+  epochs: 100                      # número de épocas
+  learning_rate: 0.003             # taxa de aprendizado
+  weight_decay: 0.00005            # regularização L2
+  save_path: "data/07_model_outputs/mlp_model.pth"

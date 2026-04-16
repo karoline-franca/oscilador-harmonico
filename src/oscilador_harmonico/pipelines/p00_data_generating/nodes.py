@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, Tuple
 
 from oscilador_harmonico.utils import CORES_PALETA, formatar_numero_pt_br
-from oscilador_harmonico.oscillator import OsciladorHarmonicoPyTorch
+from .oscillator import OsciladorHarmonicoPyTorch 
 
 
 def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
@@ -31,22 +31,8 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
         np.random.seed(seed)
         torch.manual_seed(seed)
     
-    x0_estratos = np.linspace(intervals['x0_min'], intervals['x0_max'], n_condicoes + 1)
-    v0_estratos = np.linspace(intervals['v0_min'], intervals['v0_max'], n_condicoes + 1)
-    
-    x0 = []
-    v0 = []
-    
-    for i in range(n_condicoes):
-        x0_val = np.random.uniform(x0_estratos[i], x0_estratos[i+1])
-        v0_val = np.random.uniform(v0_estratos[i], v0_estratos[i+1])
-        x0.append(x0_val)
-        v0.append(v0_val)
-    
-    # embaralha
-    indices = np.random.permutation(n_condicoes)
-    x0 = np.array(x0)[indices]
-    v0 = np.array(v0)[indices]
+    x0 = np.random.uniform(intervals['x0_min'], intervals['x0_max'], n_condicoes)
+    v0 = np.random.uniform(intervals['v0_min'], intervals['v0_max'], n_condicoes)
     
     df = pd.DataFrame({
         'x0': x0,
@@ -58,7 +44,7 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
 
 def gera_frequencias_angulares_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     """
-    Node: Gera frequências angulares aleatórias.
+    Node: Gera frequências angulares aleatórias estratificadas.
     
     Args:
         parameters: Parâmetros do pipeline.
@@ -138,7 +124,7 @@ def executa_simulacao_rk4_node(
     n_passos = int(np.ceil(t_final_calculado / sim_params['dt']))
     t_final = n_passos * sim_params['dt']
     
-    # executa simulação - retorna apenas o dicionário solucao
+    # executa simulação - retorna apenas o dicionário solução
     solucao = oscilador.resolve_multi_condicoes_sistemas(
         condicoes_iniciais=cond_iniciais_tensor,
         t_final=t_final,
