@@ -12,7 +12,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict, Any, Tuple
-import joblib
 
 from .model import MLP
 from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
@@ -20,7 +19,7 @@ from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
 
 def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
     """
-    Prepara os dados para treinamento da MLP.
+    Prepara os dados para treinamento do MLP.
     
     Entrada: [x0, v0, frequencia_angular]
     Saída: [posicao, velocidade, tempo]
@@ -47,11 +46,12 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     X_scaled = scaler_X.fit_transform(X_raw)
     y_scaled = scaler_y.fit_transform(y_raw)
     
-    X_temp, X_val, y_temp, y_val = train_test_split(
-        X_scaled, y_scaled, test_size=0.15, random_state=42
+    # 70% treino, 20% teste, 10% validação
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X_scaled, y_scaled, test_size=0.30, random_state=42  # 30% temporário
     )
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.176, random_state=42
+    X_test, X_val, y_test, y_val = train_test_split(
+        X_temp, y_temp, test_size=0.3333, random_state=42  # 10% do total (33.33% dos 30%)
     )
     
     print(f"Treino: {X_train.shape}, Teste: {X_test.shape}, Validação: {X_val.shape}")
@@ -256,7 +256,7 @@ def visualiza_previsoes_mlp_node(
     fig = cria_grafico_previsoes_mlp(
         predictions=predictions,
         y_true=y_val_original,
-        titulo="Previsões do Modelo MLP - Dados de Validação"
+        titulo="Previsões do Modelo MLP nos Dados de Validação"
     )
     
     fig.write_html("data/08_reporting/previsoes_mlp.html")
@@ -276,7 +276,7 @@ def salva_modelo_mlp_node(
     """Salva o modelo treinado e os scalers."""
     mlp_config = parameters.get('mlp', {})
     
-    save_path = mlp_config.get('save_path', 'data/07_model_outputs/mlp_model.pth')
+    save_path = mlp_config.get('save_path', 'data/07_model_output/mlp_model.pth')
     
     torch.save({
         'model_state_dict': model.state_dict(),

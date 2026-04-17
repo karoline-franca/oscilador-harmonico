@@ -55,15 +55,15 @@ grafico_2d:
 
 modelo_mlp:
   type: pickle.PickleDataset
-  filepath: data/07_model_outputs/mlp_model.pth
+  filepath: data/07_model_output/mlp_model.pth
 
 modelo_mlp_treinado:
   type: pickle.PickleDataset
-  filepath: data/07_model_outputs/mlp_model_trained.pth
+  filepath: data/07_model_output/mlp_model_trained.pth
 
 history_mlp:
   type: pickle.PickleDataset
-  filepath: data/07_model_outputs/mlp_history.pkl
+  filepath: data/07_model_output/mlp_history.pkl
 
 metricas_mlp:
   type: json.JSONDataset

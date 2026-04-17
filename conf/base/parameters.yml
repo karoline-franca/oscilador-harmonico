@@ -1,6 +1,6 @@
 simulation:
   n_sistemas: 5
-  n_condicoes_por_sistema: 512
+  n_condicoes_por_sistema: 500
   num_periodos: 1
   dt: 0.01
 
@@ -32,4 +32,4 @@ mlp:
   epochs: 100                      # número de épocas
   learning_rate: 0.003             # taxa de aprendizado
   weight_decay: 0.00005            # regularização L2
-  save_path: "data/07_model_outputs/mlp_model.pth"
+  save_path: "data/07_model_output/mlp_model.pth"

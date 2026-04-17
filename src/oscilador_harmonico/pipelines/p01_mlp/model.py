@@ -1,5 +1,5 @@
 """
-Definição da arquitetura da MLP.
+Definição da arquitetura do MLP.
 """
 
 import torch
