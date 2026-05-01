@@ -8,13 +8,13 @@ import torch.nn as nn
 
 class MLP(nn.Module):
     """
-    Multi-Layer Perceptron para prever posição.
+    Multi-Layer Perceptron para prever posição e velocidade.
     
     Entrada: [x0, v0, ω, t] - condições iniciais, frequência angular e tempo
-    Saída: [x] - posição
+    Saída: [x, v] - posição e velocidade
     """
 
-    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=1, activation='sigmoid'):
+    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=2, activation='sigmoid'):
         super(MLP, self).__init__()
 
         activation_functions = {
@@ -52,6 +52,6 @@ class MLP(nn.Module):
             x: tensor de entrada (batch_size, input_dim) - [x0, v0, ω, t]
             
         Returns:
-            tensor de saída (batch_size, output_dim) - [x]
+            tensor de saída (batch_size, output_dim) - [x, v]
         """
         return self.network(x)

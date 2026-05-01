@@ -68,3 +68,15 @@ history_mlp:
 metricas_mlp:
   type: json.JSONDataset
   filepath: data/08_reporting/metricas_mlp.json
+
+grafico_distribuicao_dados:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/distribuicao_dados.html
+  plotly_args:
+    auto_open: False
+
+grafico_previsoes_espaco_fases:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/previsoes_espaco_fases.html
+  plotly_args:
+    auto_open: False

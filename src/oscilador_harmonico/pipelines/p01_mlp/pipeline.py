@@ -10,7 +10,8 @@ from .nodes import (
     treina_mlp_node,
     avalia_mlp_node,
     visualiza_previsoes_mlp_node,
-    visualiza_distribuicao_dados_separado
+    visualiza_distribuicao_dados_separado,
+    visualiza_previsoes_espaco_fases_node,
 )
 
 
@@ -29,7 +30,15 @@ def create_pipeline(**kwargs) -> Pipeline:
             name="node_prepara_dados_mlp",
             tags=["mlp", "preprocessing"]
         ),
-        
+
+        node(
+            func=visualiza_distribuicao_dados_separado,
+            inputs=["base_oscilador", "parameters"],
+            outputs=None,
+            name="node_visualiza_distribuicao_dados",
+            tags=["mlp", "visualization", "eda"]
+        ),
+ 
         node(
             func=cria_modelo_mlp_node,
             inputs=["input_dim", "output_dim", "parameters"],
@@ -63,11 +72,11 @@ def create_pipeline(**kwargs) -> Pipeline:
         ),
 
         node(
-            func=visualiza_distribuicao_dados_separado,
-            inputs=["base_oscilador", "parameters"],
+            func=visualiza_previsoes_espaco_fases_node,
+            inputs=["modelo_mlp_treinado", "X_val", "y_val", "scaler_y", "parameters"],
             outputs=None,
-            name="node_visualiza_distribuicao_dados",
-            tags=["mlp", "visualization", "eda"]
+            name="node_visualiza_previsoes_espaco_fases",
+            tags=["mlp", "visualization", "phase_space"]
         ),
 
     ])
