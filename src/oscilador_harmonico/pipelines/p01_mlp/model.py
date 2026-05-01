@@ -10,7 +10,7 @@ class MLP(nn.Module):
     """
     Multi-Layer Perceptron para prever posição e velocidade.
     
-    Entrada: [x0, v0, ω, t] - condições iniciais, frequência angular e tempo
+    Entrada: [A, ω, φ, t] - amplitude, frequência angular, fase inicial e tempo
     Saída: [x, v] - posição e velocidade
     """
 
@@ -49,7 +49,7 @@ class MLP(nn.Module):
         Forward pass.
         
         Args:
-            x: tensor de entrada (batch_size, input_dim) - [x0, v0, ω, t]
+            x: tensor de entrada (batch_size, input_dim) - [A, ω, φ, t]
             
         Returns:
             tensor de saída (batch_size, output_dim) - [x, v]

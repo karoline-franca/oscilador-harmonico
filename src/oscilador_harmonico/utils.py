@@ -241,6 +241,8 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     return fig
 
 
+# gráfico saída x,v
+
 def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo MLP"):
     """
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
@@ -346,7 +348,6 @@ def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo
     )
     
     return fig
-
 
 def cria_grafico_distribuicao_dados(
     y_pos_train, y_vel_train,
