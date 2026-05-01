@@ -22,8 +22,13 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     Prepara os dados para treinamento do MLP.
     
     Entrada: [x0, v0, frequencia_angular, tempo]
-    Saída: [posicao, velocidade]
+    Saída: [posicao]
+    
+    Nota: Filtra apenas os dados do primeiro sistema (sistema_id = 0)
     """
+    # filtra apenas os dados do primeiro sistema
+    base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
+    
     for col in base_oscilador.columns:
         if base_oscilador[col].dtype == 'object':
             try:
@@ -32,17 +37,21 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
                 pass
     
     features_entrada = ['x0', 'v0', 'frequencia_angular', 'tempo']
-    features_saida = ['posicao', 'velocidade']
+    features_saida = ['posicao']
     
     X_raw = base_oscilador[features_entrada].values.astype(np.float32)
-    y_raw = base_oscilador[features_saida].values.astype(np.float32)
+    y_raw = base_oscilador[features_saida].values.astype(np.float32).reshape(-1, 1)
     
     print("\n=== SEPARAÇÃO DAS FEATURES DE ENTRADA E SAÍDA ===")
     print(f"  Tamanho original de X (entrada): {X_raw.shape}")
     print(f"  Tamanho original de y (saída): {y_raw.shape}")
     
-    X_scaled = X_raw.copy()
-    y_scaled = y_raw.copy()
+    # normalização padrão das variáveis de entrada e saída
+    scaler_X = StandardScaler()
+    scaler_y = StandardScaler()
+    
+    X_scaled = scaler_X.fit_transform(X_raw)
+    y_scaled = scaler_y.fit_transform(y_raw)
     
     # 70% treino, 20% teste, 10% validação
     X_train, X_temp, y_train, y_temp = train_test_split(
@@ -57,26 +66,87 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     input_dim = X_train.shape[1]
     output_dim = y_train.shape[1]
     
-    return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim
+    return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim, scaler_X, scaler_y
 
+
+def visualiza_distribuicao_dados_separado(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> None:
+    """
+    Node separado para visualizar a distribuição dos dados no espaço de fases.
+    Carrega os dados novamente e faz a divisão apenas para visualização.
+    Não interfere no pipeline principal de treinamento.
+    
+    Args:
+        base_oscilador: DataFrame com a base consolidada
+        parameters: Parâmetros do pipeline
+    """
+    from oscilador_harmonico.utils import cria_grafico_distribuicao_dados
+    
+    base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
+    
+    for col in base_oscilador.columns:
+        if base_oscilador[col].dtype == 'object':
+            try:
+                base_oscilador[col] = base_oscilador[col].astype(str).str.replace(',', '.').astype(float)
+            except:
+                pass
+    
+    posicao = base_oscilador['posicao'].values.astype(np.float32)
+    velocidade = base_oscilador['velocidade'].values.astype(np.float32)
+    y_combined = np.column_stack([posicao, velocidade])
+    
+    # 70% treino, 20% teste, 10% validação
+    _, y_temp, _, _ = train_test_split(
+        y_combined, y_combined, test_size=0.30, random_state=42  # 30% temporário
+    )
+    y_test, y_val, _, _ = train_test_split(
+        y_temp, y_temp, test_size=0.3333, random_state=42  # 10% do total (33.33% dos 30%)
+    )
+    y_train = y_combined[:len(y_combined) - len(y_temp)]
+    
+    y_pos_train = y_train[:, 0].reshape(-1, 1)
+    y_vel_train = y_train[:, 1].reshape(-1, 1)
+    y_pos_test = y_test[:, 0].reshape(-1, 1)
+    y_vel_test = y_test[:, 1].reshape(-1, 1)
+    y_pos_val = y_val[:, 0].reshape(-1, 1)
+    y_vel_val = y_val[:, 1].reshape(-1, 1)
+    
+    fig = cria_grafico_distribuicao_dados(
+        y_pos_train=y_pos_train,
+        y_vel_train=y_vel_train,
+        y_pos_test=y_pos_test,
+        y_vel_test=y_vel_test,
+        y_pos_val=y_pos_val,
+        y_vel_val=y_vel_val,
+        titulo="Distribuição dos Dados - Espaço de Fases"
+    )
+    
+    fig.write_html("data/08_reporting/distribuicao_dados.html")
+    print("Gráfico de distribuição salvo em data/08_reporting/distribuicao_dados.html")
+    
+    fig.show()
+    
+    return None
 
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
     """Cria o modelo MLP."""
     mlp_config = parameters.get('mlp', {})
     
     hidden_dims = mlp_config.get('hidden_dims', [64, 128, 64])
+    activation = mlp_config.get('activation', 'sigmoid')
     
     model = MLP(
         input_dim=input_dim,
         hidden_dims=hidden_dims,
         output_dim=output_dim,
+        activation=activation
     )
     
     print("\n=== MODELO MLP CRIADO ===")
     print(f"  Input dim: {input_dim} (x0, v0, ω, t)")
     print(f"  Hidden dims: {hidden_dims}")
-    print(f"  Output dim: {output_dim} (x, v)")
+    print(f"  Output dim: {output_dim} (x)")
     print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    print(f"  Função de ativação: {activation.capitalize()}")
     
     return model
 
@@ -123,7 +193,7 @@ def treina_mlp_node(
     }
     
     print("\n=== INICIANDO TREINAMENTO DO MLP ===")
-    print(f"  Entrada: (x0, v0, ω, t) -> Saída: (x, v)")
+    print(f"  Entrada: (x0, v0, ω, t) -> Saída: (x)")
     print(f"  Batch size: {batch_size}")
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
@@ -167,46 +237,54 @@ def treina_mlp_node(
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Test Loss: {epoch_test_loss:.6f}")
-    
-    print("\n=== TREINAMENTO CONCLUÍDO ===")
-    
+        
     return model, history
 
 
 def avalia_mlp_node(
     model: nn.Module,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
+    scaler_y: StandardScaler
 ) -> Dict[str, float]:
-    """Avalia o modelo MLP nos dados de validação."""
+    """Avalia o modelo MLP nos dados de teste."""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
     
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
     
     with torch.no_grad():
-        predictions = model(X_val_tensor).cpu().numpy()
+        predictions_scaled_test = model(X_test_tensor).cpu().numpy()
+        predictions_scaled_val = model(X_val_tensor).cpu().numpy()
     
-    mse_pos = float(mean_squared_error(y_val[:, 0], predictions[:, 0]))
-    mse_vel = float(mean_squared_error(y_val[:, 1], predictions[:, 1]))
-    
-    r2_pos = float(r2_score(y_val[:, 0], predictions[:, 0]))
-    r2_vel = float(r2_score(y_val[:, 1], predictions[:, 1]))
-    
+    # desnormaliza previsões
+    predictions_test = scaler_y.inverse_transform(predictions_scaled_test)
+    y_test_original = scaler_y.inverse_transform(y_test)
+    predictions_val = scaler_y.inverse_transform(predictions_scaled_val)
+    y_val_original = scaler_y.inverse_transform(y_val)
+
+    rmse_pos_test = float(np.sqrt(mean_squared_error(y_test_original[:, 0], predictions_test[:, 0])))
+    r2_pos_test = float(r2_score(y_test_original[:, 0], predictions_test[:, 0]))
+    rmse_pos_val = float(np.sqrt(mean_squared_error(y_val_original[:, 0], predictions_val[:, 0])))
+    r2_pos_val = float(r2_score(y_val_original[:, 0], predictions_val[:, 0]))
+
     metrics = {
-        'mse_posicao': mse_pos,
-        'mse_velocidade': mse_vel,
-        'r2_posicao': r2_pos,
-        'r2_velocidade': r2_vel
+        'rmse_posicao_test': rmse_pos_test,
+        'r2_posicao_test': r2_pos_test,
+        'rmse_posicao_val': rmse_pos_val,
+        'r2_posicao_val': r2_pos_val,
     }
     
     print("\n=== AVALIAÇÃO DO MODELO MLP ===")
-    print(f"  MSE Posição: {mse_pos:.6f}")
-    print(f"  MSE Velocidade: {mse_vel:.6f}")
-    print(f"  R² Posição: {r2_pos:.4f}")
-    print(f"  R² Velocidade: {r2_vel:.4f}")
-    
+    print(f"  RMSE Posição Teste: {rmse_pos_test:.6f}")
+    print(f"  R² Posição Teste: {r2_pos_test:.4f}")
+    print(f"  RMSE Posição Validação: {rmse_pos_val:.6f}")
+    print(f"  R² Posição Validação: {r2_pos_val:.4f}")
+
     return metrics
 
 
@@ -214,15 +292,17 @@ def visualiza_previsoes_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
     y_val: np.ndarray,
+    scaler_y: StandardScaler,
     parameters: Dict[str, Any]
 ) -> None:
     """
-    Visualiza as previsões do modelo MLP.
+    Visualiza as previsões do modelo MLP nos dados de validação.
     
     Args:
         model: Modelo treinado
         X_val: Dados de validação
         y_val: Targets de validação
+        scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -232,12 +312,16 @@ def visualiza_previsoes_mlp_node(
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
     
     with torch.no_grad():
-        predictions = model(X_val_tensor).cpu().numpy()
+        predictions_scaled = model(X_val_tensor).cpu().numpy()
+    
+    # desnormaliza previsões
+    predictions = scaler_y.inverse_transform(predictions_scaled)
+    y_val_original = scaler_y.inverse_transform(y_val)
     
     fig = cria_grafico_previsoes_mlp(
         predictions=predictions,
-        y_true=y_val,
-        titulo="Previsões do Modelo MLP nos Dados de Validação"
+        y_true=y_val_original,
+        titulo="Previsão de Posição - MLP nos Dados de Validação"
     )
     
     fig.write_html("data/08_reporting/previsoes_mlp.html")

@@ -8,33 +8,34 @@ import torch.nn as nn
 
 class MLP(nn.Module):
     """
-    Multi-Layer Perceptron para prever posição e velocidade.
+    Multi-Layer Perceptron para prever posição.
     
     Entrada: [x0, v0, ω, t] - condições iniciais, frequência angular e tempo
-    Saída: [x, v] - posição e velocidade
+    Saída: [x] - posição
     """
-    
-    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=2):
-        """
-        Args:
-            input_dim: Dimensão da entrada (x0, v0, ω, t) = 4
-            hidden_dims: Lista com dimensões das camadas ocultas
-            output_dim: Dimensão da saída (x, v) = 2
-        """
+
+    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=1, activation='sigmoid'):
         super(MLP, self).__init__()
+
+        activation_functions = {
+            'sigmoid': nn.Sigmoid(),
+            'relu': nn.ReLU(),
+            'tanh': nn.Tanh(),
+        }
+        
+        self.activation = activation_functions.get(activation.lower(), nn.Sigmoid())
         
         layers = []
         prev_dim = input_dim
         
         for hidden_dim in hidden_dims:
             layers.append(nn.Linear(prev_dim, hidden_dim))
-            layers.append(nn.Sigmoid())
+            layers.append(self.activation)
             prev_dim = hidden_dim
         
         layers.append(nn.Linear(prev_dim, output_dim))
         
         self.network = nn.Sequential(*layers)
-        
         self._initialize_weights()
     
     def _initialize_weights(self):
@@ -51,6 +52,6 @@ class MLP(nn.Module):
             x: tensor de entrada (batch_size, input_dim) - [x0, v0, ω, t]
             
         Returns:
-            tensor de saída (batch_size, output_dim) - [x, v]
+            tensor de saída (batch_size, output_dim) - [x]
         """
         return self.network(x)

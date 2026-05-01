@@ -5,7 +5,7 @@ Utilitários para o pipeline do oscilador harmônico.
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from sklearn.metrics import r2_score
+from sklearn.metrics import mean_squared_error, r2_score
 
 CORES_PALETA = [
     '#FF1493', '#00FF00', '#FF4500', '#00BFFF', '#FFD700',
@@ -246,100 +246,226 @@ def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
     
     Args:
-        predictions: array com as previsões (n_samples, 2) - [x, v]
-        y_true: array com os valores reais (n_samples, 2) - [x, v]
+        predictions: array com as previsões (n_samples, 1) - [x]
+        y_true: array com os valores reais (n_samples, 1) - [x]
         titulo: título do gráfico
         
     Returns:
         Figura Plotly
     """
     fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=('Posição', 'Velocidade'),
+        rows=1, cols=1,
+        subplot_titles=('Posição',),
         horizontal_spacing=0.15
     )
     
-    cores = ['blue', 'green']
-    nomes = ['Posição', 'Velocidade']
-    unidades = ['m', 'm/s']
-    
-    for i in range(2):
-        # adiciona pontos de dispersão
-        fig.add_trace(
-            go.Scatter(
-                x=y_true[:, i],
-                y=predictions[:, i],
-                mode='markers',
-                name=f'{nomes[i]}',
-                marker=dict(
-                    color=cores[i],
-                    size=3,
-                    opacity=0.5
-                ),
-                hovertemplate=(
-                    f"<b>{nomes[i]}</b><br>" +
-                    f"Valor Real: %{{x:.3f}} {unidades[i]}<br>" +
-                    f"Valor Previsto: %{{y:.3f}} {unidades[i]}<br>" +
-                    f"<extra></extra>"
-                )
+    # adiciona pontos de dispersão
+    fig.add_trace(
+        go.Scatter(
+            x=y_true[:, 0],
+            y=predictions[:, 0],
+            mode='markers',
+            name='Posição',
+            marker=dict(
+                color='blue',
+                size=3,
+                opacity=0.5
             ),
-            row=1, col=i+1
-        )
-        
-        # adiciona linha y=x (referência)
-        min_val = min(y_true[:, i].min(), predictions[:, i].min())
-        max_val = max(y_true[:, i].max(), predictions[:, i].max())
-        
-        fig.add_trace(
-            go.Scatter(
-                x=[min_val, max_val],
-                y=[min_val, max_val],
-                mode='lines',
-                name='Referência (y=x)',
-                line=dict(color='red', width=2, dash='dash'),
-                showlegend=(i == 0),  # mostra apenas na primeira coluna
-                hovertemplate='Referência: %{x:.3f}<extra></extra>'
-            ),
-            row=1, col=i+1
-        )
-        
-        fig.update_xaxes(
-            title_text=f'Valor Real {nomes[i]} ({unidades[i]})',
-            row=1, col=i+1,
-            showgrid=True,
-            gridcolor='lightgray'
-        )
-        
-        fig.update_yaxes(
-            title_text=f'Valor Previsto {nomes[i]} ({unidades[i]})',
-            row=1, col=i+1,
-            showgrid=True,
-            gridcolor='lightgray'
-        )
+            hovertemplate=(
+                f"<b>Posição</b><br>" +
+                f"Valor Real: %{{x:.3f}} m<br>" +
+                f"Valor Previsto: %{{y:.3f}} m<br>" +
+                f"<extra></extra>"
+            )
+        ),
+        row=1, col=1
+    )
     
+    # adiciona linha y=x (referência)
+    min_val = min(y_true[:, 0].min(), predictions[:, 0].min())
+    max_val = max(y_true[:, 0].max(), predictions[:, 0].max())
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[min_val, max_val],
+            y=[min_val, max_val],
+            mode='lines',
+            name='Referência (y=x)',
+            line=dict(color='red', width=2, dash='dash'),
+            showlegend=True,
+            hovertemplate='Referência: %{x:.3f}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+    
+    fig.update_xaxes(
+        title_text='Valor Real Posição (m)',
+        row=1, col=1,
+        showgrid=True,
+        gridcolor='lightgray'
+    )
+    
+    fig.update_yaxes(
+        title_text='Valor Previsto Posição (m)',
+        row=1, col=1,
+        showgrid=True,
+        gridcolor='lightgray'
+    )
+    
+    rmse_pos = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
     r2_pos = r2_score(y_true[:, 0], predictions[:, 0])
-    r2_vel = r2_score(y_true[:, 1], predictions[:, 1])
     
     fig.update_layout(
         title=dict(
             text=f"{titulo}<br>" +
-                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
+                 f"<sup>RMSE Posição: {rmse_pos:.4f} - </sup>" + 
+                 f"<sup>R² Posição: {r2_pos:.4f}</sup>",
             x=0.5,
             font=dict(size=16)
         ),
-        width=1000,
-        height=500,
+        width=800,
+        height=600,
         showlegend=True,
         legend=dict(
-            x=1.02,  # posiciona à direita dos subgráficos
-            y=0.5,   # centralizado verticalmente
-            xanchor='left',  # ancora o ponto x na borda esquerda da legenda
-            yanchor='middle',  # ancora o ponto y no centro da legenda
+            x=1.02,
+            y=0.5,
+            xanchor='left',
+            yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1
         ),
         hovermode='closest'
+    )
+    
+    return fig
+
+
+def cria_grafico_distribuicao_dados(
+    y_pos_train, y_vel_train,
+    y_pos_test, y_vel_test,
+    y_pos_val, y_vel_val,
+    titulo="Distribuição dos Dados no Espaço de Fases"
+):
+    """
+    Cria gráfico 2D mostrando a distribuição dos dados de treino, teste e validação no espaço de fases.
+    
+    Args:
+        y_pos_train: Posições de treino
+        y_vel_train: Velocidades de treino
+        y_pos_test: Posições de teste
+        y_vel_test: Velocidades de teste
+        y_pos_val: Posições de validação
+        y_vel_val: Velocidades de validação
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = go.Figure()
+    
+    # treino
+    fig.add_trace(go.Scatter(
+        x=y_pos_train.flatten(),
+        y=y_vel_train.flatten(),
+        mode='markers',
+        name='Dados de Treino (70%)',
+        marker=dict(
+            color='#00FF00',
+            size=3,
+            opacity=0.5,
+            symbol='circle'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Treino</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # teste
+    fig.add_trace(go.Scatter(
+        x=y_pos_test.flatten(),
+        y=y_vel_test.flatten(),
+        mode='markers',
+        name='Dados de Teste (20%)',
+        marker=dict(
+            color='#8A2BE2',
+            size=3,
+            opacity=0.5,
+            symbol='square'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Teste</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # validação
+    fig.add_trace(go.Scatter(
+        x=y_pos_val.flatten(),
+        y=y_vel_val.flatten(),
+        mode='markers',
+        name='Dados de Validação (10%)',
+        marker=dict(
+            color='#FF2400',
+            size=3,
+            opacity=0.5,
+            symbol='diamond'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Validação</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    n_train = len(y_pos_train)
+    n_test = len(y_pos_test)
+    n_val = len(y_pos_val)
+    total = n_train + n_test + n_val
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{titulo}<br>" +
+                 f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
+                 f"Teste: {n_test} ({n_test/total*100:.1f}%) | " +
+                 f"Validação: {n_val} ({n_val/total*100:.1f}%)</sup>",
+            x=0.5,
+            font=dict(size=16)
+        ),
+        xaxis_title="Posição (m)",
+        yaxis_title="Velocidade (m/s)",
+        width=1400,
+        height=1000,
+        legend=dict(
+            title="Conjunto",
+            x=0.75,
+            y=0.98,
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1
+        ),
+        hovermode='closest',
+        plot_bgcolor='black',
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1
+        ),
+        yaxis=dict(
+            showgrid=False,
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1
+        )
     )
     
     return fig

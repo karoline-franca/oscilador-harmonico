@@ -27,7 +27,8 @@ outputs:
 
 mlp:
   hidden_dims: [64, 128, 64]       # camadas ocultas
+  activation: "tanh"               # função de ativação
   batch_size: 512                  # tamanho do batch
-  epochs: 500                      # número de épocas
+  epochs: 100                      # número de épocas
   learning_rate: 0.005             # taxa de aprendizado
   weight_decay: 0.00005            # regularização L2
