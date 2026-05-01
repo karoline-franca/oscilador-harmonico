@@ -5,12 +5,12 @@ simulation:
   dt: 0.01
 
 intervals:
-  omega_min: 0.5
-  omega_max: 15.0
-  x0_min: -6.0
-  x0_max: 6.0
-  v0_min: -6.0
-  v0_max: 6.0
+  omega_min: 1.0        # rad/s (f≈0.16 Hz)
+  omega_max: 5.0        # rad/s (f≈0.80 Hz)
+  x0_min: -0.5          # metros (deslocamento típico de mola)
+  x0_max: 0.5
+  v0_min: -1.0          # m/s (3.6 km/h)
+  v0_max: 1.0
 
 seed: 42
 
@@ -27,9 +27,7 @@ outputs:
 
 mlp:
   hidden_dims: [64, 128, 64]       # camadas ocultas
-  dropout: 0.1                     # dropout para regularização
   batch_size: 512                  # tamanho do batch
-  epochs: 100                      # número de épocas
-  learning_rate: 0.003             # taxa de aprendizado
+  epochs: 500                      # número de épocas
+  learning_rate: 0.005             # taxa de aprendizado
   weight_decay: 0.00005            # regularização L2
-  save_path: "data/07_model_output/mlp_model.pth"

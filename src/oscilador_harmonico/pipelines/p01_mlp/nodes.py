@@ -21,8 +21,8 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     """
     Prepara os dados para treinamento do MLP.
     
-    Entrada: [x0, v0, frequencia_angular]
-    Saída: [posicao, velocidade, tempo]
+    Entrada: [x0, v0, frequencia_angular, tempo]
+    Saída: [posicao, velocidade]
     """
     for col in base_oscilador.columns:
         if base_oscilador[col].dtype == 'object':
@@ -31,20 +31,18 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
             except:
                 pass
     
-    features_entrada = ['x0', 'v0', 'frequencia_angular']
-    features_saida = ['posicao', 'velocidade', 'tempo']
+    features_entrada = ['x0', 'v0', 'frequencia_angular', 'tempo']
+    features_saida = ['posicao', 'velocidade']
     
     X_raw = base_oscilador[features_entrada].values.astype(np.float32)
     y_raw = base_oscilador[features_saida].values.astype(np.float32)
     
-    print(f"Tamanho original de X (entrada): {X_raw.shape}")
-    print(f"Tamanho original de y (saída): {y_raw.shape}")
+    print("\n=== SEPARAÇÃO DAS FEATURES DE ENTRADA E SAÍDA ===")
+    print(f"  Tamanho original de X (entrada): {X_raw.shape}")
+    print(f"  Tamanho original de y (saída): {y_raw.shape}")
     
-    scaler_X = StandardScaler()
-    scaler_y = StandardScaler()
-    
-    X_scaled = scaler_X.fit_transform(X_raw)
-    y_scaled = scaler_y.fit_transform(y_raw)
+    X_scaled = X_raw.copy()
+    y_scaled = y_raw.copy()
     
     # 70% treino, 20% teste, 10% validação
     X_train, X_temp, y_train, y_temp = train_test_split(
@@ -54,12 +52,12 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         X_temp, y_temp, test_size=0.3333, random_state=42  # 10% do total (33.33% dos 30%)
     )
     
-    print(f"Treino: {X_train.shape}, Teste: {X_test.shape}, Validação: {X_val.shape}")
+    print(f"  Treino: {X_train.shape}, Teste: {X_test.shape}, Validação: {X_val.shape}")
     
     input_dim = X_train.shape[1]
     output_dim = y_train.shape[1]
     
-    return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim, scaler_X, scaler_y
+    return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim
 
 
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
@@ -67,19 +65,17 @@ def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, 
     mlp_config = parameters.get('mlp', {})
     
     hidden_dims = mlp_config.get('hidden_dims', [64, 128, 64])
-    dropout = mlp_config.get('dropout', 0.1)
     
     model = MLP(
         input_dim=input_dim,
         hidden_dims=hidden_dims,
         output_dim=output_dim,
-        dropout=dropout
     )
     
-    print(f"Modelo MLP criado:")
-    print(f"  Input dim: {input_dim} (x0, v0, ω)")
+    print("\n=== MODELO MLP CRIADO ===")
+    print(f"  Input dim: {input_dim} (x0, v0, ω, t)")
     print(f"  Hidden dims: {hidden_dims}")
-    print(f"  Output dim: {output_dim} (x, v, t)")
+    print(f"  Output dim: {output_dim} (x, v)")
     print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     
     return model
@@ -97,9 +93,9 @@ def treina_mlp_node(
     mlp_config = parameters.get('mlp', {})
     
     batch_size = mlp_config.get('batch_size', 512)
-    epochs = mlp_config.get('epochs', 100)
-    learning_rate = mlp_config.get('learning_rate', 0.003)
-    weight_decay = mlp_config.get('weight_decay', 0.00005)
+    epochs = mlp_config.get('epochs', 500)
+    learning_rate = mlp_config.get('learning_rate', 0.005)
+    # weight_decay = mlp_config.get('weight_decay', 0.00005)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Dispositivo: {device}")
@@ -118,7 +114,7 @@ def treina_mlp_node(
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=0.0)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
     
     history = {
@@ -126,11 +122,11 @@ def treina_mlp_node(
         'test_loss': []
     }
     
-    print("\n=== INICIANDO TREINAMENTO MLP ===")
-    print(f"Entrada: (x0, v0, ω) -> Saída: (x, v, t)")
-    print(f"Batch size: {batch_size}")
-    print(f"Epochs: {epochs}")
-    print(f"Learning rate: {learning_rate}")
+    print("\n=== INICIANDO TREINAMENTO DO MLP ===")
+    print(f"  Entrada: (x0, v0, ω, t) -> Saída: (x, v)")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Epochs: {epochs}")
+    print(f"  Learning rate: {learning_rate}")
     
     for epoch in range(epochs):
         # treino
@@ -181,7 +177,6 @@ def avalia_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    scaler_y: StandardScaler
 ) -> Dict[str, float]:
     """Avalia o modelo MLP nos dados de validação."""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -191,35 +186,26 @@ def avalia_mlp_node(
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
     
     with torch.no_grad():
-        predictions_scaled = model(X_val_tensor).cpu().numpy()
+        predictions = model(X_val_tensor).cpu().numpy()
     
-    predictions = scaler_y.inverse_transform(predictions_scaled)
-    y_val_original = scaler_y.inverse_transform(y_val)
+    mse_pos = float(mean_squared_error(y_val[:, 0], predictions[:, 0]))
+    mse_vel = float(mean_squared_error(y_val[:, 1], predictions[:, 1]))
     
-    mse_pos = float(mean_squared_error(y_val_original[:, 0], predictions[:, 0]))
-    mse_vel = float(mean_squared_error(y_val_original[:, 1], predictions[:, 1]))
-    mse_tempo = float(mean_squared_error(y_val_original[:, 2], predictions[:, 2]))
-    
-    r2_pos = float(r2_score(y_val_original[:, 0], predictions[:, 0]))
-    r2_vel = float(r2_score(y_val_original[:, 1], predictions[:, 1]))
-    r2_tempo = float(r2_score(y_val_original[:, 2], predictions[:, 2]))
+    r2_pos = float(r2_score(y_val[:, 0], predictions[:, 0]))
+    r2_vel = float(r2_score(y_val[:, 1], predictions[:, 1]))
     
     metrics = {
         'mse_posicao': mse_pos,
         'mse_velocidade': mse_vel,
-        'mse_tempo': mse_tempo,
         'r2_posicao': r2_pos,
-        'r2_velocidade': r2_vel,
-        'r2_tempo': r2_tempo
+        'r2_velocidade': r2_vel
     }
     
     print("\n=== AVALIAÇÃO DO MODELO MLP ===")
-    print(f"MSE Posição: {mse_pos:.6f}")
-    print(f"MSE Velocidade: {mse_vel:.6f}")
-    print(f"MSE Tempo: {mse_tempo:.6f}")
-    print(f"R² Posição: {r2_pos:.4f}")
-    print(f"R² Velocidade: {r2_vel:.4f}")
-    print(f"R² Tempo: {r2_tempo:.4f}")
+    print(f"  MSE Posição: {mse_pos:.6f}")
+    print(f"  MSE Velocidade: {mse_vel:.6f}")
+    print(f"  R² Posição: {r2_pos:.4f}")
+    print(f"  R² Velocidade: {r2_vel:.4f}")
     
     return metrics
 
@@ -228,7 +214,6 @@ def visualiza_previsoes_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    scaler_y: StandardScaler,
     parameters: Dict[str, Any]
 ) -> None:
     """
@@ -238,7 +223,6 @@ def visualiza_previsoes_mlp_node(
         model: Modelo treinado
         X_val: Dados de validação
         y_val: Targets de validação
-        scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -248,14 +232,11 @@ def visualiza_previsoes_mlp_node(
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
     
     with torch.no_grad():
-        predictions_scaled = model(X_val_tensor).cpu().numpy()
-    
-    predictions = scaler_y.inverse_transform(predictions_scaled)
-    y_val_original = scaler_y.inverse_transform(y_val)
+        predictions = model(X_val_tensor).cpu().numpy()
     
     fig = cria_grafico_previsoes_mlp(
         predictions=predictions,
-        y_true=y_val_original,
+        y_true=y_val,
         titulo="Previsões do Modelo MLP nos Dados de Validação"
     )
     
@@ -263,33 +244,5 @@ def visualiza_previsoes_mlp_node(
     print("Gráfico de previsões salvo em data/08_reporting/previsoes_mlp.html")
     
     fig.show()
-    
-    return None
-
-
-def salva_modelo_mlp_node(
-    model: nn.Module,
-    scaler_X: StandardScaler,
-    scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
-) -> None:
-    """Salva o modelo treinado e os scalers."""
-    mlp_config = parameters.get('mlp', {})
-    
-    save_path = mlp_config.get('save_path', 'data/07_model_output/mlp_model.pth')
-    
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'scaler_X': scaler_X,
-        'scaler_y': scaler_y,
-        'input_dim': 3,
-        'output_dim': 3,
-        'hidden_dims': mlp_config.get('hidden_dims', [64, 128, 64]),
-        'dropout': mlp_config.get('dropout', 0.1)
-    }, save_path)
-    
-    print(f"\nModelo MLP salvo em: {save_path}")
-    print(f"  Entrada Normalizada: (x0, v0, ω)")
-    print(f"  Saída Normalizada: (x, v, t)")
     
     return None

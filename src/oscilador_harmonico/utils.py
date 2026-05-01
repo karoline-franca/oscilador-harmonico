@@ -246,24 +246,24 @@ def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
     
     Args:
-        predictions: array com as previsões (n_samples, 3) - [x, v, t]
-        y_true: array com os valores reais (n_samples, 3) - [x, v, t]
+        predictions: array com as previsões (n_samples, 2) - [x, v]
+        y_true: array com os valores reais (n_samples, 2) - [x, v]
         titulo: título do gráfico
         
     Returns:
         Figura Plotly
     """
     fig = make_subplots(
-        rows=1, cols=3,
-        subplot_titles=('Posição', 'Velocidade', 'Tempo'),
-        horizontal_spacing=0.1
+        rows=1, cols=2,
+        subplot_titles=('Posição', 'Velocidade'),
+        horizontal_spacing=0.15
     )
     
-    cores = ['blue', 'green', 'orange']
-    nomes = ['Posição', 'Velocidade', 'Tempo']
-    unidades = ['m', 'm/s', 's']
+    cores = ['blue', 'green']
+    nomes = ['Posição', 'Velocidade']
+    unidades = ['m', 'm/s']
     
-    for i in range(3):
+    for i in range(2):
         # adiciona pontos de dispersão
         fig.add_trace(
             go.Scatter(
@@ -319,21 +319,22 @@ def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo
     
     r2_pos = r2_score(y_true[:, 0], predictions[:, 0])
     r2_vel = r2_score(y_true[:, 1], predictions[:, 1])
-    r2_tempo = r2_score(y_true[:, 2], predictions[:, 2])
     
     fig.update_layout(
         title=dict(
             text=f"{titulo}<br>" +
-                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f} | R² Tempo: {r2_tempo:.4f}</sup>",
+                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
             font=dict(size=16)
         ),
-        width=1200,
+        width=1000,
         height=500,
         showlegend=True,
         legend=dict(
-            x=-10.00,
-            y=0.98,
+            x=1.02,  # posiciona à direita dos subgráficos
+            y=0.5,   # centralizado verticalmente
+            xanchor='left',  # ancora o ponto x na borda esquerda da legenda
+            yanchor='middle',  # ancora o ponto y no centro da legenda
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1

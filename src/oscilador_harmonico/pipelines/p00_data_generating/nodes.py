@@ -59,23 +59,29 @@ def gera_frequencias_angulares_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     if seed is not None:
         np.random.seed(seed)
     
-    estratos = np.linspace(intervals['omega_min'], intervals['omega_max'], n_sistemas + 1)
+    # distribuição log-uniform (mais amostras em baixas frequências)
+    log_omega_min = np.log10(intervals['omega_min'])
+    log_omega_max = np.log10(intervals['omega_max'])
+    
+    log_estratos = np.linspace(log_omega_min, log_omega_max, n_sistemas + 1)
     
     omegas = []
     for i in range(n_sistemas):
-        omega = np.random.uniform(estratos[i], estratos[i+1])
+        log_omega = np.random.uniform(log_estratos[i], log_estratos[i+1])
+        omega = 10 ** log_omega
         omegas.append(omega)
     
     np.random.shuffle(omegas)
     
-    # cria descrições
     descricoes = []
     for omega in omegas:
         if omega < 1.0:
-            descricoes.append("Lento")
+            descricoes.append("Muito Lento")
         elif omega < 3.0:
+            descricoes.append("Lento")
+        elif omega < 6.0:
             descricoes.append("Médio")
-        elif omega < 8.0:
+        elif omega < 9.0:
             descricoes.append("Rápido")
         else:
             descricoes.append("Muito Rápido")
