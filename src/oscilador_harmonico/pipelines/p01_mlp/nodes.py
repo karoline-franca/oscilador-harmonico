@@ -19,6 +19,21 @@ from .model import MLP
 from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
 
 
+def fixar_sementes(seed: int = 42):
+    """Fixa todas as sementes para reprodutibilidade."""
+    import random
+    import numpy as np
+    import torch
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
 def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
     """
     Prepara os dados para treinamento do MLP.
@@ -132,15 +147,19 @@ def visualiza_distribuicao_dados_separado(base_oscilador: pd.DataFrame, paramete
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
     """Cria o modelo MLP."""
     mlp_config = parameters.get('mlp', {})
+    seed = parameters.get('seed', 42)
+    
+    fixar_sementes(seed)
     
     hidden_dims = mlp_config.get('hidden_dims', [64, 128, 64])
-    activation = mlp_config.get('activation', 'sigmoid')
+    activation = mlp_config.get('activation', 'relu')
     
     model = MLP(
         input_dim=input_dim,
         hidden_dims=hidden_dims,
         output_dim=output_dim,
-        activation=activation
+        activation=activation,
+        seed=seed
     )
     
     print("\n=== MODELO MLP CRIADO ===")

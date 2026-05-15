@@ -16,8 +16,14 @@ class MLP(nn.Module):
     Saída: [x, v] - posição e velocidade
     """
 
-    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=2, activation='sigmoid'):
+    def __init__(self, input_dim=4, hidden_dims=[64, 128, 64], output_dim=2, activation='relu', seed=None):
         super(MLP, self).__init__()
+
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
 
         activation_functions = {
             'sigmoid': nn.Sigmoid(),
