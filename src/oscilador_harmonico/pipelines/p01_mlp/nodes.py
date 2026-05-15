@@ -1,3 +1,5 @@
+# nodes saída x,v; entrada [x0, v0, ω, t]
+
 """
 Nodes do pipeline MLP.
 """
@@ -21,13 +23,13 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     """
     Prepara os dados para treinamento do MLP.
     
-    Entrada: [A, ω, φ, t] - amplitude, frequência angular, fase inicial e tempo
+    Entrada: [x0, v0, frequencia_angular, tempo]
     Saída: [posicao, velocidade]
     
     Nota: Filtra apenas os dados do primeiro sistema (sistema_id = 0)
     """
     # filtra apenas os dados do primeiro sistema
-    base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
+    # base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
     
     for col in base_oscilador.columns:
         if base_oscilador[col].dtype == 'object':
@@ -36,22 +38,10 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
             except:
                 pass
     
-    # Calcula amplitude e fase inicial a partir das condições iniciais
-    x0 = base_oscilador['x0'].values
-    v0 = base_oscilador['v0'].values
-    omega = base_oscilador['frequencia_angular'].values
-    
-    # Amplitude: A = sqrt(x0² + (v0/ω)²)
-    amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
-    
-    # Fase inicial: φ = arctan2(-v0, ω * x0)
-    fase_inicial = np.arctan2(-v0, omega * x0)
-    
-    features_entrada = ['amplitude', 'frequencia_angular', 'fase_inicial', 'tempo']
+    features_entrada = ['x0', 'v0', 'frequencia_angular', 'tempo']
     features_saida = ['posicao', 'velocidade']
     
-    # Constrói a matriz de entrada com as novas features
-    X_raw = np.column_stack([amplitude, omega, fase_inicial, base_oscilador['tempo'].values]).astype(np.float32)
+    X_raw = base_oscilador[features_entrada].values.astype(np.float32)
     y_raw = base_oscilador[features_saida].values.astype(np.float32)
     
     print("\n=== SEPARAÇÃO DAS FEATURES DE ENTRADA E SAÍDA ===")
@@ -154,7 +144,7 @@ def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, 
     )
     
     print("\n=== MODELO MLP CRIADO ===")
-    print(f"  Input dim: {input_dim} (A, ω, φ, t)")
+    print(f"  Input dim: {input_dim} (x0, v0, ω, t)")
     print(f"  Hidden dims: {hidden_dims}")
     print(f"  Output dim: {output_dim} (x, v)")
     print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
@@ -205,7 +195,7 @@ def treina_mlp_node(
     }
     
     print("\n=== INICIANDO TREINAMENTO DO MLP ===")
-    print(f"  Entrada: (A, ω, φ, t) -> Saída: (x, v)")
+    print(f"  Entrada: (x0, v0, ω, t) -> Saída: (x, v)")
     print(f"  Batch size: {batch_size}")
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
