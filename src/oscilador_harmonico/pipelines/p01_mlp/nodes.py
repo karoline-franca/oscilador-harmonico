@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict, Any, Tuple
+import plotly.graph_objects as go
 
 from .model import MLP
 from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
@@ -414,5 +415,166 @@ def visualiza_previsoes_espaco_fases_node(
     print("Gráfico de previsões no espaço de fases salvo em data/08_reporting/previsoes_espaco_fases.html")
     
     fig.show()
+    
+    return None
+
+
+def interpola_trajetorias_node(
+    model: nn.Module,
+    scaler_X: StandardScaler,
+    scaler_y: StandardScaler,
+    parameters: Dict[str, Any]
+) -> None:
+    """
+    Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
+    para novas condições iniciais e frequências não vistas durante o treinamento.
+    Este nó simula o modelo em produção.
+    
+    Args:
+        model: Modelo MLP treinado
+        scaler_X: Scaler das features de entrada
+        scaler_y: Scaler dos targets
+        parameters: Parâmetros do pipeline
+    """
+    from oscilador_harmonico.utils import (
+        cria_grafico_interpolacao_completo,
+        cria_grafico_interpolacao_espaco_fases,
+        CORES_PALETA
+    )
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    model.eval()
+    
+    sim_params = parameters.get('simulation', {})
+    dt = sim_params.get('dt', 0.01)
+    
+    print("\n=== INICIANDO MODELO PARA INTERPOLAÇÃO ===")
+    
+    # casos de teste para interpolação
+    casos_teste = [
+        {
+            "nome": "Caso 1",
+            "x0": 0.3,
+            "v0": 0.0,
+            "omega": 1,
+            "t_final": 1,
+            "cor": CORES_PALETA[0]
+        },
+        {
+            "nome": "Caso 2",
+            "x0": 0.5,
+            "v0": 0.0,
+            "omega": 2,
+            "t_final": 2,
+            "cor": CORES_PALETA[2]
+        },
+        {
+            "nome": "Caso 3",
+            "x0": 0.0,
+            "v0": 0.8,
+            "omega": 3,
+            "t_final": 3,
+            "cor": CORES_PALETA[1]
+        },
+        {
+            "nome": "Caso 4",
+            "x0": -0.2,
+            "v0": -0.5,
+            "omega": 4,
+            "t_final": 4,
+            "cor": CORES_PALETA[4]
+        },
+        {
+            "nome": "Caso 5",
+            "x0": 0.1,
+            "v0": 0.2,
+            "omega": 5,
+            "t_final": 5,
+            "cor": CORES_PALETA[5]
+        },
+        {
+            "nome": "Caso 6",
+            "x0": -0.4,
+            "v0": -0.8,
+            "omega": 6,
+            "t_final": 6,
+            "cor": CORES_PALETA[14]
+        }
+    ]
+    
+    # gera os nomes das legendas dinamicamente
+    for caso in casos_teste:
+        caso["nome_legenda"] = (
+            f"{caso['nome']}: x0={caso['x0']:.1f} m, "
+            f"v0={caso['v0']:.1f} m/s, "
+            f"ω={caso['omega']:.1f} rad/s, "
+            f"t={caso['t_final']:.1f} s"
+        )
+    
+    tempos_lista = []
+    posicoes_lista = []
+    velocidades_lista = []
+    
+    print("  Processando casos de teste...")
+    for caso in casos_teste:
+        t_max = caso["t_final"]
+        tempos = np.arange(0, t_max + dt, dt)
+        
+        # prepara as entradas
+        X_caso = np.zeros((len(tempos), 4))
+        X_caso[:, 0] = caso["x0"]
+        X_caso[:, 1] = caso["v0"]
+        X_caso[:, 2] = caso["omega"]
+        X_caso[:, 3] = tempos
+        
+        # normaliza e faz previsão
+        X_caso_scaled = scaler_X.transform(X_caso)
+        X_tensor = torch.tensor(X_caso_scaled, dtype=torch.float32).to(device)
+        
+        with torch.no_grad():
+            predictions_scaled = model(X_tensor).cpu().numpy()
+        
+        predictions = scaler_y.inverse_transform(predictions_scaled)
+        
+        tempos_lista.append(tempos)
+        posicoes_lista.append(predictions[:, 0])
+        velocidades_lista.append(predictions[:, 1])
+    
+    print("  Gerando gráficos de interpolação...")
+    
+    fig_completo = cria_grafico_interpolacao_completo(
+        tempos_lista=tempos_lista,
+        posicoes_lista=posicoes_lista,
+        velocidades_lista=velocidades_lista,
+        casos_info=casos_teste,
+        titulo="Modelo em Produção: Posição e Velocidade vs Tempo"
+    )
+    
+    fig_fases = cria_grafico_interpolacao_espaco_fases(
+        posicoes_lista=posicoes_lista,
+        velocidades_lista=velocidades_lista,
+        casos_info=casos_teste,
+        titulo="Modelo em Produção: Espaço de Fases"
+    )
+    
+    if fig_completo is not None:
+        fig_completo.write_html("data/08_reporting/interpolacao_completa.html")
+        print("Gráfico de interpolação (Posição e Velocidade) salvo em data/08_reporting/interpolacao_completa.html")
+    else:
+        print("ERRO: fig_completo é None")
+    
+    if fig_fases is not None:
+        fig_fases.write_html("data/08_reporting/interpolacao_espaco_fases.html")
+        print("Gráfico de interpolação (Espaço de Fases) salvo em data/08_reporting/interpolacao_espaco_fases.html")
+    else:
+        print("ERRO: fig_fases é None")
+    
+    print("\n=== MODELO EM PRODUÇÃO EXECUTADO COM SUCESSO ===")
+    print(f"  Passo de tempo (dt): {dt} s")
+    print(f"  Número de casos testados: {len(casos_teste)}")
+    
+    fig_completo.show()
+    fig_fases.show()
     
     return None

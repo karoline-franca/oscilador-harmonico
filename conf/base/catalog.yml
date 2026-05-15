@@ -53,6 +53,16 @@ grafico_2d:
   plotly_args:
     auto_open: False
 
+scaler_X:
+  type: pickle.PickleDataset
+  filepath: data/06_models/scaler_X.pkl
+  backend: pickle
+
+scaler_y:
+  type: pickle.PickleDataset
+  filepath: data/06_models/scaler_y.pkl
+  backend: pickle
+
 modelo_mlp:
   type: pickle.PickleDataset
   filepath: data/07_model_output/mlp_model.pth
@@ -78,5 +88,17 @@ grafico_distribuicao_dados:
 grafico_previsoes_espaco_fases:
   type: plotly.PlotlyDataset
   filepath: data/08_reporting/previsoes_espaco_fases.html
+  plotly_args:
+    auto_open: False
+
+grafico_interpolacao_completa:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/interpolacao_completa.html
+  plotly_args:
+    auto_open: False
+
+grafico_interpolacao_espaco_fases:
+  type: plotly.PlotlyDataset
+  filepath: data/08_reporting/interpolacao_espaco_fases.html
   plotly_args:
     auto_open: False

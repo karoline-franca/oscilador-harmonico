@@ -12,6 +12,7 @@ from .nodes import (
     visualiza_previsoes_mlp_node,
     visualiza_distribuicao_dados_separado,
     visualiza_previsoes_espaco_fases_node,
+    interpola_trajetorias_node,
 )
 
 
@@ -77,6 +78,14 @@ def create_pipeline(**kwargs) -> Pipeline:
             outputs=None,
             name="node_visualiza_previsoes_espaco_fases",
             tags=["mlp", "visualization", "phase_space"]
+        ),
+
+        node(
+            func=interpola_trajetorias_node,
+            inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
+            outputs=None,
+            name="node_interpola_trajetorias",
+            tags=["mlp", "production", "interpolation"]
         ),
 
     ])

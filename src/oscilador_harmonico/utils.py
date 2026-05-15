@@ -451,7 +451,6 @@ def cria_grafico_distribuicao_dados(
         width=1400,
         height=1000,
         legend=dict(
-            title="Conjunto",
             x=0.75,
             y=0.98,
             bgcolor='rgba(255, 255, 255, 0.9)',
@@ -503,7 +502,7 @@ def cria_grafico_previsoes_espaco_fases(
         x=y_pos_true.flatten(),
         y=y_vel_true.flatten(),
         mode='markers',
-        name='Dados Reais (Validação)',
+        name='Dados de Validaçã)',
         marker=dict(
             color='#00BFFF',
             size=3,
@@ -557,6 +556,235 @@ def cria_grafico_previsoes_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
+            x=0.75,
+            y=0.98,
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1
+        ),
+        hovermode='closest',
+        plot_bgcolor='black',
+        paper_bgcolor='black',
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        yaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        title_font_color='white'
+    )
+    
+    return fig
+
+def cria_grafico_interpolacao_completo(
+    tempos_lista,
+    posicoes_lista,
+    velocidades_lista,
+    casos_info,
+    titulo="Interpolação do Modelo: Posição e Velocidade vs Tempo"
+):
+    """
+    Cria gráfico 2D combinando posição e velocidade no tempo.
+    
+    Args:
+        tempos_lista: Lista de arrays com os tempos para cada caso
+        posicoes_lista: Lista de arrays com as posições previstas para cada caso
+        velocidades_lista: Lista de arrays com as velocidades previstas para cada caso
+        casos_info: Lista de dicionários com informações dos casos (nome, x0, v0, omega, cor, nome_legenda)
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = go.Figure()
+    
+    def clarear_cor(cor, fator=0.5):
+        """Clareia uma cor hexadecimal."""
+        cor = cor.lstrip('#')
+        r, g, b = int(cor[0:2], 16), int(cor[2:4], 16), int(cor[4:6], 16)
+        r = min(255, int(r + (255 - r) * fator))
+        g = min(255, int(g + (255 - g) * fator))
+        b = min(255, int(b + (255 - b) * fator))
+        return f'#{r:02x}{g:02x}{b:02x}'
+    
+    for i, (tempos, posicoes, velocidades) in enumerate(zip(tempos_lista, posicoes_lista, velocidades_lista)):
+        caso = casos_info[i]
+        
+        nome_legenda = caso.get('nome_legenda', caso['nome'])
+        
+        cor_velocidade = clarear_cor(caso['cor'], fator=0.6)
+        
+        # posição
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=posicoes,
+            mode='lines',
+            name=f"{nome_legenda} - Posição",
+            line=dict(color=caso['cor'], width=2, dash='solid'),
+            legendgroup=f"posicao_{i}",
+            hovertemplate=(
+                f"<b>{nome_legenda} - Posição</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Posição: %{{y:.3f}} m<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        # velocidade
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=velocidades,
+            mode='lines',
+            name=f"{nome_legenda} - Velocidade",
+            line=dict(color=cor_velocidade, width=2, dash='solid'),
+            legendgroup=f"velocidade_{i}",
+            hovertemplate=(
+                f"<b>{nome_legenda} - Velocidade</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{titulo}<br>",
+            x=0.5,
+            font=dict(size=16)
+        ),
+        xaxis_title="Tempo (s)",
+        yaxis_title="Posição (m) / Velocidade (m/s)",
+        width=1400,
+        height=900,
+        legend=dict(
+            x=1.02,
+            y=0.98,
+            xanchor='left',
+            yanchor='top',
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1
+        ),
+        hovermode='closest',
+        plot_bgcolor='black',
+        paper_bgcolor='black',
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        yaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        title_font_color='white'
+    )
+    
+    return fig
+
+
+def cria_grafico_interpolacao_espaco_fases(
+    posicoes_lista,
+    velocidades_lista,
+    casos_info,
+    titulo="Interpolação do Modelo no Espaço de Fases"
+):
+    """
+    Cria gráfico 2D mostrando as trajetórias previstas no espaço de fases.
+    
+    Args:
+        posicoes_lista: Lista de arrays com as posições previstas para cada caso
+        velocidades_lista: Lista de arrays com as velocidades previstas para cada caso
+        casos_info: Lista de dicionários com informações dos casos (nome, x0, v0, omega, cor, nome_legenda)
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = go.Figure()
+    
+    for i, (posicoes, velocidades) in enumerate(zip(posicoes_lista, velocidades_lista)):
+        caso = casos_info[i]
+        
+        nome_legenda = caso.get('nome_legenda', caso['nome'])
+        
+        # trajetória
+        fig.add_trace(go.Scatter(
+            x=posicoes,
+            y=velocidades,
+            mode='lines',
+            name=nome_legenda,
+            line=dict(color=caso['cor'], width=2),
+            hovertemplate=(
+                f"<b>{nome_legenda}</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        # ponto inicial
+        fig.add_trace(go.Scatter(
+            x=[posicoes[0]],
+            y=[velocidades[0]],
+            mode='markers',
+            marker=dict(
+                color=caso['cor'],
+                size=10,
+                symbol='circle',
+                line=dict(color='white', width=1)
+            ),
+            name=f"Início - {nome_legenda}",
+            showlegend=False,
+            hovertemplate=(
+                f"<b>Condição Inicial - {nome_legenda}</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{titulo}<br>",
+            x=0.5,
+            font=dict(size=16)
+        ),
+        xaxis_title="Posição (m)",
+        yaxis_title="Velocidade (m/s)",
+        width=1400,
+        height=1000,
+        legend=dict(
             x=0.75,
             y=0.98,
             bgcolor='rgba(255, 255, 255, 0.9)',
