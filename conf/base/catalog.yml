@@ -1,6 +1,10 @@
+# ============================================================
+# PIPELINE P00 - GERAÇÃO DE BASES DE DADOS
+# ============================================================
+
 condicoes_iniciais:
   type: pandas.CSVDataset
-  filepath: data/02_intermediate/condicoes_iniciais.csv
+  filepath: data/02_intermediate/${runtime_params:data_version,default_v1}/condicoes_iniciais.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
@@ -11,7 +15,7 @@ condicoes_iniciais:
 
 frequencias_angulares:
   type: pandas.CSVDataset
-  filepath: data/02_intermediate/frequencias_angulares.csv
+  filepath: data/02_intermediate/${runtime_params:data_version,default_v1}/frequencias_angulares.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
@@ -22,11 +26,11 @@ frequencias_angulares:
 
 solucao_rk4:
   type: pickle.PickleDataset
-  filepath: data/03_primary/solucao_rk4.pkl
+  filepath: data/03_primary/${runtime_params:data_version,default_v1}/solucao_rk4.pkl
 
 base_oscilador:
   type: pandas.CSVDataset
-  filepath: data/04_feature/base_ohs.csv
+  filepath: data/04_feature/${runtime_params:data_version,default_v1}/base_ohs.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
@@ -37,68 +41,36 @@ base_oscilador:
 
 metadata_simulacao:
   type: json.JSONDataset
-  filepath: data/04_feature/metadata_simulacao.json
+  filepath: data/04_feature/${runtime_params:data_version,default_v1}/metadata_simulacao.json
   save_args:
     indent: 2
 
-grafico_3d:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/espaco_fases_3d.html
-  plotly_args:
-    auto_open: False
-
-grafico_2d:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/espaco_fases_2d.html
-  plotly_args:
-    auto_open: False
+# ============================================================
+# PIPELINE P01 - TREINAMENTO MLP
+# ============================================================
 
 scaler_X:
   type: pickle.PickleDataset
-  filepath: data/06_models/scaler_X.pkl
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/scaler_X.pkl
   backend: pickle
 
 scaler_y:
   type: pickle.PickleDataset
-  filepath: data/06_models/scaler_y.pkl
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/scaler_y.pkl
   backend: pickle
 
 modelo_mlp:
   type: pickle.PickleDataset
-  filepath: data/07_model_output/mlp_model.pth
+  filepath: data/07_model_output/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/mlp_model.pth
 
 modelo_mlp_treinado:
   type: pickle.PickleDataset
-  filepath: data/07_model_output/mlp_model_trained.pth
+  filepath: data/07_model_output/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/mlp_model_trained.pth
 
 history_mlp:
   type: pickle.PickleDataset
-  filepath: data/07_model_output/mlp_history.pkl
+  filepath: data/07_model_output/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/mlp_history.pkl
 
 metricas_mlp:
   type: json.JSONDataset
-  filepath: data/08_reporting/metricas_mlp.json
-
-grafico_distribuicao_dados:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/distribuicao_dados.html
-  plotly_args:
-    auto_open: False
-
-grafico_previsoes_espaco_fases:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/previsoes_espaco_fases.html
-  plotly_args:
-    auto_open: False
-
-grafico_interpolacao_completa:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/interpolacao_completa.html
-  plotly_args:
-    auto_open: False
-
-grafico_interpolacao_espaco_fases:
-  type: plotly.PlotlyDataset
-  filepath: data/08_reporting/interpolacao_espaco_fases.html
-  plotly_args:
-    auto_open: False
+  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/metricas_mlp.json

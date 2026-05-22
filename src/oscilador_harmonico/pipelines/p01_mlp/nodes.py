@@ -6,6 +6,8 @@ Nodes do pipeline MLP.
 
 import numpy as np
 import pandas as pd
+import os
+import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,17 +16,19 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict, Any, Tuple
-import plotly.graph_objects as go
-
 from .model import MLP
-from oscilador_harmonico.utils import cria_grafico_previsoes_mlp
+from oscilador_harmonico.utils import (
+    cria_grafico_previsoes_mlp,
+    cria_grafico_distribuicao_dados,
+    cria_grafico_previsoes_espaco_fases,
+    cria_grafico_interpolacao_completo,
+    cria_grafico_interpolacao_espaco_fases,
+    CORES_PALETA
+)
 
 
 def fixar_sementes(seed: int = 42):
     """Fixa todas as sementes para reprodutibilidade."""
-    import random
-    import numpy as np
-    import torch
     
     random.seed(seed)
     np.random.seed(seed)
@@ -34,6 +38,7 @@ def fixar_sementes(seed: int = 42):
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
 
 def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
     """
@@ -87,7 +92,10 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     return X_train, y_train, X_test, y_test, X_val, y_val, input_dim, output_dim, scaler_X, scaler_y
 
 
-def visualiza_distribuicao_dados_separado(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> None:
+def visualiza_distribuicao_dados_separado(
+    base_oscilador: pd.DataFrame, 
+    parameters: Dict[str, Any]
+) -> None:
     """
     Node separado para visualizar a distribuição dos dados no espaço de fases.
     Carrega os dados novamente e faz a divisão apenas para visualização.
@@ -97,7 +105,14 @@ def visualiza_distribuicao_dados_separado(base_oscilador: pd.DataFrame, paramete
         base_oscilador: DataFrame com a base consolidada
         parameters: Parâmetros do pipeline
     """
-    from oscilador_harmonico.utils import cria_grafico_distribuicao_dados
+    
+    exp_name = parameters.get('exp_name', 'default_exp')
+    data_version = parameters.get('data_version', 'default_v1')
+    
+    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_distribuicao_dados = f"{output_dir}/distribuicao_dados.html"
     
     base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
     
@@ -138,15 +153,17 @@ def visualiza_distribuicao_dados_separado(base_oscilador: pd.DataFrame, paramete
         titulo="Distribuição dos Dados - Espaço de Fases"
     )
     
-    fig.write_html("data/08_reporting/distribuicao_dados.html")
-    print("Gráfico de distribuição salvo em data/08_reporting/distribuicao_dados.html")
+    fig.write_html(grafico_distribuicao_dados)
+    print(f"Gráfico de distribuição salvo em {grafico_distribuicao_dados}")
     
     fig.show()
     
     return None
 
+
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
     """Cria o modelo MLP."""
+
     mlp_config = parameters.get('mlp', {})
     seed = parameters.get('seed', 42)
     
@@ -182,6 +199,7 @@ def treina_mlp_node(
     parameters: Dict[str, Any]
 ) -> Tuple[nn.Module, Dict]:
     """Treina o modelo MLP."""
+
     mlp_config = parameters.get('mlp', {})
     
     batch_size = mlp_config.get('batch_size', 512)
@@ -272,6 +290,7 @@ def avalia_mlp_node(
     scaler_y: StandardScaler
 ) -> Dict[str, float]:
     """Avalia o modelo MLP nos dados de teste."""
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
@@ -340,6 +359,13 @@ def visualiza_previsoes_mlp_node(
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
     """
+    data_version = parameters.get('data_version', 'base_01')
+    
+    output_dir = f"data/08_reporting/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_previsoes_mlp = f"{output_dir}/previsoes_mlp.html"
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
@@ -359,12 +385,13 @@ def visualiza_previsoes_mlp_node(
         titulo="Previsão de Posição e Velocidade - MLP nos Dados de Validação"
     )
     
-    fig.write_html("data/08_reporting/previsoes_mlp.html")
-    print("Gráfico de previsões salvo em data/08_reporting/previsoes_mlp.html")
+    fig.write_html(grafico_previsoes_mlp)
+    print(f"Gráfico de previsões salvo em {grafico_previsoes_mlp}")
     
     fig.show()
     
     return None
+
 
 def visualiza_previsoes_espaco_fases_node(
     model: nn.Module,
@@ -383,7 +410,14 @@ def visualiza_previsoes_espaco_fases_node(
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
     """
-    from oscilador_harmonico.utils import cria_grafico_previsoes_espaco_fases
+    
+    exp_name = parameters.get('exp_name', 'default_exp')
+    data_version = parameters.get('data_version', 'default_v1')
+    
+    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_previsoes_espaco_fases = f"{output_dir}/previsoes_espaco_fases.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -411,8 +445,8 @@ def visualiza_previsoes_espaco_fases_node(
         titulo="Previsões do Modelo no Espaço de Fases - Dados de Validação"
     )
     
-    fig.write_html("data/08_reporting/previsoes_espaco_fases.html")
-    print("Gráfico de previsões no espaço de fases salvo em data/08_reporting/previsoes_espaco_fases.html")
+    fig.write_html(grafico_previsoes_espaco_fases)
+    print(f"Gráfico de previsões no espaço de fases salvo em {grafico_previsoes_espaco_fases}")
     
     fig.show()
     
@@ -436,11 +470,15 @@ def interpola_trajetorias_node(
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
     """
-    from oscilador_harmonico.utils import (
-        cria_grafico_interpolacao_completo,
-        cria_grafico_interpolacao_espaco_fases,
-        CORES_PALETA
-    )
+
+    exp_name = parameters.get('exp_name', 'default_exp')
+    data_version = parameters.get('data_version', 'base_01')
+    
+    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_interpolacao_completa = f"{output_dir}/interpolacao_completa.html"
+    grafico_interpolacao_espaco_fases = f"{output_dir}/interpolacao_espaco_fases.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -454,51 +492,51 @@ def interpola_trajetorias_node(
     # casos de teste para interpolação
     casos_teste = [
         {
-            "nome": "Caso 1",
+            "nome": "Caso 1: ω=1.0 rad/s",
             "x0": 0.3,
             "v0": 0.0,
-            "omega": 1,
-            "t_final": 1,
+            "omega": 1.0,
+            "t_final": 2 * np.pi / 1.0,
             "cor": CORES_PALETA[0]
         },
         {
-            "nome": "Caso 2",
+            "nome": "Caso 2: ω=2.0 rad/s",
             "x0": 0.5,
             "v0": 0.0,
-            "omega": 2,
-            "t_final": 2,
+            "omega": 2.0,
+            "t_final": 2 * np.pi / 2.0,
             "cor": CORES_PALETA[2]
         },
         {
-            "nome": "Caso 3",
+            "nome": "Caso 3: ω=3.0 rad/s",
             "x0": 0.0,
             "v0": 0.8,
-            "omega": 3,
-            "t_final": 3,
+            "omega": 3.0,
+            "t_final": 2 * np.pi / 3.0,
             "cor": CORES_PALETA[1]
         },
         {
-            "nome": "Caso 4",
+            "nome": "Caso 4: ω=4.0 rad/s",
             "x0": -0.2,
             "v0": -0.5,
-            "omega": 4,
-            "t_final": 4,
+            "omega": 4.0,
+            "t_final": 2 * np.pi / 4.0,
             "cor": CORES_PALETA[4]
         },
         {
-            "nome": "Caso 5",
+            "nome": "Caso 5: ω=5.0 rad/s",
             "x0": 0.1,
             "v0": 0.2,
-            "omega": 5,
-            "t_final": 5,
+            "omega": 5.0,
+            "t_final": 2 * np.pi / 5.0,
             "cor": CORES_PALETA[5]
         },
         {
-            "nome": "Caso 6",
+            "nome": "Caso 6: ω=6.0 rad/s (extrapolação)",
             "x0": -0.4,
             "v0": -0.8,
-            "omega": 6,
-            "t_final": 6,
+            "omega": 6.0,
+            "t_final": 2 * np.pi / 6.0,
             "cor": CORES_PALETA[14]
         }
     ]
@@ -509,7 +547,7 @@ def interpola_trajetorias_node(
             f"{caso['nome']}: x0={caso['x0']:.1f} m, "
             f"v0={caso['v0']:.1f} m/s, "
             f"ω={caso['omega']:.1f} rad/s, "
-            f"t={caso['t_final']:.1f} s"
+            f"T={caso['t_final']:.2f} s"
         )
     
     tempos_lista = []
@@ -559,20 +597,22 @@ def interpola_trajetorias_node(
     )
     
     if fig_completo is not None:
-        fig_completo.write_html("data/08_reporting/interpolacao_completa.html")
-        print("Gráfico de interpolação (Posição e Velocidade) salvo em data/08_reporting/interpolacao_completa.html")
+        fig_completo.write_html(grafico_interpolacao_completa)
+        print(f"Gráfico de interpolação (Posição e Velocidade) salvo em {grafico_interpolacao_completa}")
     else:
         print("ERRO: fig_completo é None")
     
     if fig_fases is not None:
-        fig_fases.write_html("data/08_reporting/interpolacao_espaco_fases.html")
-        print("Gráfico de interpolação (Espaço de Fases) salvo em data/08_reporting/interpolacao_espaco_fases.html")
+        fig_fases.write_html(grafico_interpolacao_espaco_fases)
+        print(f"Gráfico de interpolação (Espaço de Fases) salvo em {grafico_interpolacao_espaco_fases}")
     else:
         print("ERRO: fig_fases é None")
     
     print("\n=== MODELO EM PRODUÇÃO EXECUTADO COM SUCESSO ===")
     print(f"  Passo de tempo (dt): {dt} s")
     print(f"  Número de casos testados: {len(casos_teste)}")
+    print(f"  Período mais longo: {2 * np.pi / 1.0:.2f} s")
+    print(f"  Período mais curto: {2 * np.pi / 6.0:.2f} s")
     
     fig_completo.show()
     fig_fases.show()

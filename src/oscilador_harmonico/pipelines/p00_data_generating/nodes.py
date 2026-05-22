@@ -5,7 +5,8 @@ Nodes do pipeline Kedro para o Oscilador Harmônico Simples.
 import numpy as np
 import pandas as pd
 import torch
-import plotly.graph_objects as go
+from oscilador_harmonico.utils import cria_grafico_3d, cria_grafico_2d
+import os
 from datetime import datetime
 from typing import Dict, Any, Tuple
 
@@ -199,6 +200,7 @@ def gera_base_consolidada_node(
     
     return pd.DataFrame(dados)
 
+
 def cria_visualizacoes_node(
     solucao: Dict[str, Any],
     frequencias_angulares: pd.DataFrame
@@ -209,11 +211,15 @@ def cria_visualizacoes_node(
     Args:
         solucao: Dicionário com resultados.
         frequencias_angulares: DataFrame com frequências.
-        
-    Returns:
-        Tupla com (figura_3d, figura_2d).
     """
-    from oscilador_harmonico.utils import cria_grafico_3d, cria_grafico_2d
+    
+    data_version = os.environ.get('DATA_VERSION', 'base_01')
+    
+    output_dir = f"data/08_reporting/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_3d_path = f"{output_dir}/espaco_fases_3d.html"
+    grafico_2d_path = f"{output_dir}/espaco_fases_2d.html"
     
     descricoes = frequencias_angulares['descricao_sistema'].tolist()
     
@@ -221,15 +227,23 @@ def cria_visualizacoes_node(
     fig2d = cria_grafico_2d(solucao, descricoes)
     
     if fig3d is not None:
-        fig3d.write_html("data/08_reporting/espaco_fases_3d.html")
-        print("Gráfico 3D salvo em data/08_reporting/espaco_fases_3d.html")
+        fig3d.write_html(grafico_3d_path)
+        print(f"Gráfico 3D salvo em {grafico_3d_path}")
     else:
         print("ERRO: fig3d é None")
+        import plotly.graph_objects as go
+        fig3d = go.Figure()
+        fig3d.update_layout(title="Erro ao gerar gráfico 3D")
+        fig3d.write_html(grafico_3d_path)
     
     if fig2d is not None:
-        fig2d.write_html("data/08_reporting/espaco_fases_2d.html")
-        print("Gráfico 2D salvo em data/08_reporting/espaco_fases_2d.html")
+        fig2d.write_html(grafico_2d_path)
+        print(f"Gráfico 2D salvo em {grafico_2d_path}")
     else:
         print("ERRO: fig2d é None")
+        import plotly.graph_objects as go
+        fig2d = go.Figure()
+        fig2d.update_layout(title="Erro ao gerar gráfico 2D")
+        fig2d.write_html(grafico_2d_path)
     
     return None

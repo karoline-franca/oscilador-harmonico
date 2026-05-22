@@ -502,7 +502,7 @@ def cria_grafico_previsoes_espaco_fases(
         x=y_pos_true.flatten(),
         y=y_vel_true.flatten(),
         mode='markers',
-        name='Dados de Validaçã)',
+        name='Dados de Validação',
         marker=dict(
             color='#00BFFF',
             size=3,
