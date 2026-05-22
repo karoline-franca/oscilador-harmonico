@@ -73,4 +73,4 @@ history_mlp:
 
 metricas_mlp:
   type: json.JSONDataset
-  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/metricas_mlp.json
+  filepath: data/08_reporting/${runtime_params:data_version,default_v1}/metricas_mlp.json

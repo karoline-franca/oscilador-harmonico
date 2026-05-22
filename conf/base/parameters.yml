@@ -2,14 +2,14 @@ simulation:
   n_sistemas: 5
   n_condicoes_por_sistema: 500
   num_periodos: 1
-  dt: 0.01
+  dt: 0.001
 
 intervals:
-  omega_min: 1.0        # rad/s (f≈0.16 Hz)
-  omega_max: 5.0        # rad/s (f≈0.80 Hz)
-  x0_min: -0.5          # metros (deslocamento típico de mola)
+  omega_min: 1.0        
+  omega_max: 5.0       
+  x0_min: -0.5          
   x0_max: 0.5
-  v0_min: -1.0          # m/s (3.6 km/h)
+  v0_min: -1.0          
   v0_max: 1.0
 
 seed: 42

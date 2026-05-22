@@ -109,7 +109,7 @@ def visualiza_distribuicao_dados_separado(
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'default_v1')
     
-    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    output_dir = f"data/08_reporting/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_distribuicao_dados = f"{output_dir}/distribuicao_dados.html"
@@ -414,7 +414,7 @@ def visualiza_previsoes_espaco_fases_node(
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'default_v1')
     
-    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    output_dir = f"data/08_reporting/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_previsoes_espaco_fases = f"{output_dir}/previsoes_espaco_fases.html"
@@ -608,7 +608,7 @@ def interpola_trajetorias_node(
     else:
         print("ERRO: fig_fases é None")
     
-    print("\n=== MODELO EM PRODUÇÃO EXECUTADO COM SUCESSO ===")
+    print("\n=== MODELO EM PRODUÇÃO ===")
     print(f"  Passo de tempo (dt): {dt} s")
     print(f"  Número de casos testados: {len(casos_teste)}")
     print(f"  Período mais longo: {2 * np.pi / 1.0:.2f} s")
