@@ -243,7 +243,7 @@ def cria_grafico_2d(solucao, sistemas_descricao):
 
 # gráfico saída x,v
 
-def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo MLP"):
+def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Modelo MLP"):
     """
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
     
@@ -351,20 +351,20 @@ def cria_grafico_previsoes_mlp(predictions, y_true, titulo="Previsões do Modelo
 
 def cria_grafico_distribuicao_dados(
     y_pos_train, y_vel_train,
-    y_pos_test, y_vel_test,
     y_pos_val, y_vel_val,
+    y_pos_test, y_vel_test,
     titulo="Distribuição dos Dados no Espaço de Fases"
 ):
     """
-    Cria gráfico 2D mostrando a distribuição dos dados de treino, teste e validação no espaço de fases.
+    Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
     
     Args:
         y_pos_train: Posições de treino
         y_vel_train: Velocidades de treino
-        y_pos_test: Posições de teste
-        y_vel_test: Velocidades de teste
         y_pos_val: Posições de validação
         y_vel_val: Velocidades de validação
+        y_pos_test: Posições de teste
+        y_vel_test: Velocidades de teste
         titulo: Título do gráfico
         
     Returns:
@@ -392,37 +392,17 @@ def cria_grafico_distribuicao_dados(
         )
     ))
     
-    # teste
-    fig.add_trace(go.Scatter(
-        x=y_pos_test.flatten(),
-        y=y_vel_test.flatten(),
-        mode='markers',
-        name='Dados de Teste (20%)',
-        marker=dict(
-            color='#8A2BE2',
-            size=3,
-            opacity=0.5,
-            symbol='square'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Teste</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
     # validação
     fig.add_trace(go.Scatter(
         x=y_pos_val.flatten(),
         y=y_vel_val.flatten(),
         mode='markers',
-        name='Dados de Validação (10%)',
+        name='Dados de Validação (20%)',
         marker=dict(
-            color='#FF2400',
+            color='#8A2BE2',
             size=3,
             opacity=0.5,
-            symbol='diamond'
+            symbol='square'
         ),
         hovertemplate=(
             f"<b>Dados de Validação</b><br>" +
@@ -432,17 +412,37 @@ def cria_grafico_distribuicao_dados(
         )
     ))
     
+    # teste
+    fig.add_trace(go.Scatter(
+        x=y_pos_test.flatten(),
+        y=y_vel_test.flatten(),
+        mode='markers',
+        name='Dados de Teste (10%)',
+        marker=dict(
+            color='#FF2400',
+            size=3,
+            opacity=0.5,
+            symbol='diamond'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Teste</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
     n_train = len(y_pos_train)
-    n_test = len(y_pos_test)
     n_val = len(y_pos_val)
-    total = n_train + n_test + n_val
+    n_test = len(y_pos_test)
+    total = n_train + n_val + n_test
     
     fig.update_layout(
         title=dict(
             text=f"{titulo}<br>" +
                  f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
-                 f"Teste: {n_test} ({n_test/total*100:.1f}%) | " +
-                 f"Validação: {n_val} ({n_val/total*100:.1f}%)</sup>",
+                 f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
+                 f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
             x=0.5,
             font=dict(size=16)
         ),
@@ -502,7 +502,7 @@ def cria_grafico_previsoes_espaco_fases(
         x=y_pos_true.flatten(),
         y=y_vel_true.flatten(),
         mode='markers',
-        name='Dados de Validação',
+        name='Dados de Teste',
         marker=dict(
             color='#00BFFF',
             size=3,
@@ -588,21 +588,131 @@ def cria_grafico_previsoes_espaco_fases(
     
     return fig
 
-def cria_grafico_interpolacao_completo(
-    tempos_lista,
-    posicoes_lista,
-    velocidades_lista,
-    casos_info,
-    titulo="Interpolação do Modelo: Posição e Velocidade vs Tempo"
+
+def cria_grafico_interpolacao_pontual_mlp(
+    predictions,
+    y_true,
+    titulo="Interpolação Pontual de Posição e Velocidade"
 ):
     """
-    Cria gráfico 2D combinando posição e velocidade no tempo.
+    Cria gráficos de dispersão para visualizar a interpolação pontual do modelo MLP.
     
     Args:
-        tempos_lista: Lista de arrays com os tempos para cada caso
-        posicoes_lista: Lista de arrays com as posições previstas para cada caso
-        velocidades_lista: Lista de arrays com as velocidades previstas para cada caso
-        casos_info: Lista de dicionários com informações dos casos (nome, x0, v0, omega, cor, nome_legenda)
+        predictions: array com as previsões (n_samples, 2) - [x, v]
+        y_true: array com os valores reais (n_samples, 2) - [x, v]
+        titulo: título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Posição', 'Velocidade'),
+        horizontal_spacing=0.15
+    )
+    
+    cores = ['blue', 'green']
+    nomes = ['Posição', 'Velocidade']
+    unidades = ['m', 'm/s']
+    
+    for i in range(2):
+        # adiciona pontos de dispersão
+        fig.add_trace(
+            go.Scatter(
+                x=y_true[:, i],
+                y=predictions[:, i],
+                mode='markers',
+                name=f'{nomes[i]}',
+                marker=dict(
+                    color=cores[i],
+                    size=3,
+                    opacity=0.5
+                ),
+                hovertemplate=(
+                    f"<b>{nomes[i]}</b><br>" +
+                    f"Valor Real: %{{x:.3f}} {unidades[i]}<br>" +
+                    f"Valor Previsto: %{{y:.3f}} {unidades[i]}<br>" +
+                    f"<extra></extra>"
+                )
+            ),
+            row=1, col=i+1
+        )
+        
+        # adiciona linha y=x (referência)
+        min_val = min(y_true[:, i].min(), predictions[:, i].min())
+        max_val = max(y_true[:, i].max(), predictions[:, i].max())
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[min_val, max_val],
+                y=[min_val, max_val],
+                mode='lines',
+                name='Referência (y=x)',
+                line=dict(color='red', width=2, dash='dash'),
+                showlegend=(i == 0),  # mostra apenas na primeira coluna
+                hovertemplate='Referência: %{x:.3f}<extra></extra>'
+            ),
+            row=1, col=i+1
+        )
+        
+        fig.update_xaxes(
+            title_text=f'Valor Real {nomes[i]} ({unidades[i]})',
+            row=1, col=i+1,
+            showgrid=True,
+            gridcolor='lightgray'
+        )
+        
+        fig.update_yaxes(
+            title_text=f'Valor Previsto {nomes[i]} ({unidades[i]})',
+            row=1, col=i+1,
+            showgrid=True,
+            gridcolor='lightgray'
+        )
+    
+    rmse_pos = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
+    rmse_vel = np.sqrt(mean_squared_error(y_true[:, 1], predictions[:, 1]))
+    r2_pos = r2_score(y_true[:, 0], predictions[:, 0])
+    r2_vel = r2_score(y_true[:, 1], predictions[:, 1])
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{titulo}<br>" +
+                 f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
+                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
+            x=0.5,
+            font=dict(size=16)
+        ),
+        width=1000,
+        height=500,
+        showlegend=True,
+        legend=dict(
+            x=1.02,
+            y=0.5,
+            xanchor='left',
+            yanchor='middle',
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1
+        ),
+        hovermode='closest'
+    )
+    
+    return fig
+
+
+def cria_grafico_interpolacao_pontual_espaco_fases(
+    y_pos_true, y_vel_true,
+    y_pos_pred, y_vel_pred,
+    titulo="Interpolação Pontual no Espaço de Fases"
+):
+    """
+    Cria gráfico 2D mostrando a interpolação pontual do modelo no espaço de fases.
+    
+    Args:
+        y_pos_true: Posições reais
+        y_vel_true: Velocidades reais
+        y_pos_pred: Posições previstas
+        y_vel_pred: Velocidades previstas
         titulo: Título do gráfico
         
     Returns:
@@ -610,75 +720,67 @@ def cria_grafico_interpolacao_completo(
     """
     fig = go.Figure()
     
-    def clarear_cor(cor, fator=0.5):
-        """Clareia uma cor hexadecimal."""
-        cor = cor.lstrip('#')
-        r, g, b = int(cor[0:2], 16), int(cor[2:4], 16), int(cor[4:6], 16)
-        r = min(255, int(r + (255 - r) * fator))
-        g = min(255, int(g + (255 - g) * fator))
-        b = min(255, int(b + (255 - b) * fator))
-        return f'#{r:02x}{g:02x}{b:02x}'
+    # dados reais
+    fig.add_trace(go.Scatter(
+        x=y_pos_true.flatten(),
+        y=y_vel_true.flatten(),
+        mode='markers',
+        name='Dados de Teste',
+        marker=dict(
+            color='#00BFFF',
+            size=3,
+            opacity=0.6,
+            symbol='circle'
+        ),
+        hovertemplate=(
+            f"<b>Dados Reais</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
     
-    for i, (tempos, posicoes, velocidades) in enumerate(zip(tempos_lista, posicoes_lista, velocidades_lista)):
-        caso = casos_info[i]
-        
-        nome_legenda = caso.get('nome_legenda', caso['nome'])
-        
-        cor_velocidade = clarear_cor(caso['cor'], fator=0.6)
-        
-        # posição
-        fig.add_trace(go.Scatter(
-            x=tempos,
-            y=posicoes,
-            mode='lines',
-            name=f"{nome_legenda} - Posição",
-            line=dict(color=caso['cor'], width=2, dash='solid'),
-            legendgroup=f"posicao_{i}",
-            hovertemplate=(
-                f"<b>{nome_legenda} - Posição</b><br>" +
-                f"x₀ = {caso['x0']:.3f} m<br>" +
-                f"v₀ = {caso['v0']:.3f} m/s<br>" +
-                f"ω = {caso['omega']:.3f} rad/s<br>" +
-                f"Tempo: %{{x:.3f}} s<br>" +
-                f"Posição: %{{y:.3f}} m<br>" +
-                f"<extra></extra>"
-            )
-        ))
-        
-        # velocidade
-        fig.add_trace(go.Scatter(
-            x=tempos,
-            y=velocidades,
-            mode='lines',
-            name=f"{nome_legenda} - Velocidade",
-            line=dict(color=cor_velocidade, width=2, dash='solid'),
-            legendgroup=f"velocidade_{i}",
-            hovertemplate=(
-                f"<b>{nome_legenda} - Velocidade</b><br>" +
-                f"x₀ = {caso['x0']:.3f} m<br>" +
-                f"v₀ = {caso['v0']:.3f} m/s<br>" +
-                f"ω = {caso['omega']:.3f} rad/s<br>" +
-                f"Tempo: %{{x:.3f}} s<br>" +
-                f"Velocidade: %{{y:.3f}} m/s<br>" +
-                f"<extra></extra>"
-            )
-        ))
+    # previsões do modelo
+    fig.add_trace(go.Scatter(
+        x=y_pos_pred.flatten(),
+        y=y_vel_pred.flatten(),
+        mode='markers',
+        name='Previsões do Modelo',
+        marker=dict(
+            color='#FF4500',
+            size=3,
+            opacity=0.6,
+            symbol='diamond'
+        ),
+        hovertemplate=(
+            f"<b>Previsão do Modelo</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+
+    rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
+    rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
+    r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
+    r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
+            text=f"{titulo}<br>" +
+                 f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
+                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
-            font=dict(size=16)
+            font=dict(size=14)
         ),
-        xaxis_title="Tempo (s)",
-        yaxis_title="Posição (m) / Velocidade (m/s)",
+        xaxis_title="Posição (m)",
+        yaxis_title="Velocidade (m/s)",
         width=1400,
-        height=900,
+        height=1000,
         legend=dict(
-            x=1.02,
+            title="Legenda",
+            x=0.75,
             y=0.98,
-            xanchor='left',
-            yanchor='top',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1
@@ -709,20 +811,25 @@ def cria_grafico_interpolacao_completo(
     
     return fig
 
-
-def cria_grafico_interpolacao_espaco_fases(
-    posicoes_lista,
-    velocidades_lista,
+def cria_grafico_interpolacao_pontual_completo(
+    tempos_lista,
+    posicoes_previstas_lista,
+    velocidades_previstas_lista,
+    posicoes_reais_lista,
+    velocidades_reais_lista,
     casos_info,
-    titulo="Interpolação do Modelo no Espaço de Fases"
+    titulo="Interpolação Pontual: Posição e Velocidade vs Tempo"
 ):
     """
-    Cria gráfico 2D mostrando as trajetórias previstas no espaço de fases.
+    Cria gráfico 2D combinando posição e velocidade no tempo para interpolação pontual.
     
     Args:
-        posicoes_lista: Lista de arrays com as posições previstas para cada caso
-        velocidades_lista: Lista de arrays com as velocidades previstas para cada caso
-        casos_info: Lista de dicionários com informações dos casos (nome, x0, v0, omega, cor, nome_legenda)
+        tempos_lista: Lista de arrays com os tempos interpolados para cada caso
+        posicoes_previstas_lista: Lista de arrays com as posições previstas pelo MLP
+        velocidades_previstas_lista: Lista de arrays com as velocidades previstas pelo MLP
+        posicoes_reais_lista: Lista de arrays com as posições reais (interpolação linear)
+        velocidades_reais_lista: Lista de arrays com as velocidades reais (interpolação linear)
+        casos_info: Lista de dicionários com informações dos casos (x0, v0, omega, cor)
         titulo: Título do gráfico
         
     Returns:
@@ -730,46 +837,97 @@ def cria_grafico_interpolacao_espaco_fases(
     """
     fig = go.Figure()
     
-    for i, (posicoes, velocidades) in enumerate(zip(posicoes_lista, velocidades_lista)):
+    def clarear_cor(cor, fator=0.5):
+        """Clareia uma cor hexadecimal."""
+        cor = cor.lstrip('#')
+        r, g, b = int(cor[0:2], 16), int(cor[2:4], 16), int(cor[4:6], 16)
+        r = min(255, int(r + (255 - r) * fator))
+        g = min(255, int(g + (255 - g) * fator))
+        b = min(255, int(b + (255 - b) * fator))
+        return f'#{r:02x}{g:02x}{b:02x}'
+    
+    for i, (tempos, pos_prev, vel_prev, pos_real, vel_real) in enumerate(zip(
+        tempos_lista, posicoes_previstas_lista, velocidades_previstas_lista,
+        posicoes_reais_lista, velocidades_reais_lista
+    )):
         caso = casos_info[i]
         
-        nome_legenda = caso.get('nome_legenda', caso['nome'])
+        nome_sistema = f"ω={caso['omega']:.1f} rad/s, x₀={caso['x0']:.2f}m, v₀={caso['v0']:.2f}m/s"
         
-        # trajetória
+        cor_velocidade = clarear_cor(caso['cor'], fator=0.6)
+        
+        # posição prevista pelo MLP
         fig.add_trace(go.Scatter(
-            x=posicoes,
-            y=velocidades,
+            x=tempos,
+            y=pos_prev,
             mode='lines',
-            name=nome_legenda,
-            line=dict(color=caso['cor'], width=2),
+            name=f"{nome_sistema} - Posição (MLP)",
+            line=dict(color=caso['cor'], width=2, dash='solid'),
+            legendgroup=f"posicao_mlp_{i}",
             hovertemplate=(
-                f"<b>{nome_legenda}</b><br>" +
+                f"<b>{nome_sistema} - Posição (MLP)</b><br>" +
                 f"x₀ = {caso['x0']:.3f} m<br>" +
                 f"v₀ = {caso['v0']:.3f} m/s<br>" +
                 f"ω = {caso['omega']:.3f} rad/s<br>" +
-                f"Posição: %{{x:.3f}} m<br>" +
-                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Posição Prevista: %{{y:.3f}} m<br>" +
                 f"<extra></extra>"
             )
         ))
         
-        # ponto inicial
+        # posição real (interpolação linear)
         fig.add_trace(go.Scatter(
-            x=[posicoes[0]],
-            y=[velocidades[0]],
-            mode='markers',
-            marker=dict(
-                color=caso['cor'],
-                size=10,
-                symbol='circle',
-                line=dict(color='white', width=1)
-            ),
-            name=f"Início - {nome_legenda}",
-            showlegend=False,
+            x=tempos,
+            y=pos_real,
+            mode='lines',
+            name=f"{nome_sistema} - Posição (Real)",
+            line=dict(color=caso['cor'], width=1.5, dash='dot'),
+            legendgroup=f"posicao_real_{i}",
             hovertemplate=(
-                f"<b>Condição Inicial - {nome_legenda}</b><br>" +
+                f"<b>{nome_sistema} - Posição (Real)</b><br>" +
                 f"x₀ = {caso['x0']:.3f} m<br>" +
                 f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Posição Real: %{{y:.3f}} m<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        # velocidade prevista pelo MLP
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=vel_prev,
+            mode='lines',
+            name=f"{nome_sistema} - Velocidade (MLP)",
+            line=dict(color=cor_velocidade, width=2, dash='solid'),
+            legendgroup=f"velocidade_mlp_{i}",
+            hovertemplate=(
+                f"<b>{nome_sistema} - Velocidade (MLP)</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Velocidade Prevista: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        # velocidade real (interpolação linear)
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=vel_real,
+            mode='lines',
+            name=f"{nome_sistema} - Velocidade (Real)",
+            line=dict(color=cor_velocidade, width=1.5, dash='dot'),
+            legendgroup=f"velocidade_real_{i}",
+            hovertemplate=(
+                f"<b>{nome_sistema} - Velocidade (Real)</b><br>" +
+                f"x₀ = {caso['x0']:.3f} m<br>" +
+                f"v₀ = {caso['v0']:.3f} m/s<br>" +
+                f"ω = {caso['omega']:.3f} rad/s<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Velocidade Real: %{{y:.3f}} m/s<br>" +
                 f"<extra></extra>"
             )
         ))
@@ -780,13 +938,15 @@ def cria_grafico_interpolacao_espaco_fases(
             x=0.5,
             font=dict(size=16)
         ),
-        xaxis_title="Posição (m)",
-        yaxis_title="Velocidade (m/s)",
+        xaxis_title="Tempo (s)",
+        yaxis_title="Posição (m) / Velocidade (m/s)",
         width=1400,
-        height=1000,
+        height=900,
         legend=dict(
-            x=0.75,
+            x=1.02,
             y=0.98,
+            xanchor='left',
+            yanchor='top',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1

@@ -49,15 +49,37 @@ metadata_simulacao:
 # PIPELINE P01 - TREINAMENTO MLP
 # ============================================================
 
+X_train:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/X_train.pkl
+
+y_train:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/y_train.pkl
+
+X_val:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/X_val.pkl
+
+y_val:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/y_val.pkl
+
+X_test:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/X_test.pkl
+
+y_test:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/y_test.pkl
+
 scaler_X:
   type: pickle.PickleDataset
   filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/scaler_X.pkl
-  backend: pickle
 
 scaler_y:
   type: pickle.PickleDataset
   filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/scaler_y.pkl
-  backend: pickle
 
 modelo_mlp:
   type: pickle.PickleDataset
@@ -74,3 +96,25 @@ history_mlp:
 metricas_mlp:
   type: json.JSONDataset
   filepath: data/08_reporting/${runtime_params:data_version,default_v1}/metricas_mlp.json
+
+base_interpolada_tempo:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_tempo.csv
+  load_args:
+    sep: ';'
+    encoding: 'latin-1'
+  save_args:
+    index: False
+    sep: ';'
+    encoding: 'latin-1'
+
+base_interpolada_x0_v0_w:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_x0_v0_w.csv
+  load_args:
+    sep: ';'
+    encoding: 'latin-1'
+  save_args:
+    index: False
+    sep: ';'
+    encoding: 'latin-1'
