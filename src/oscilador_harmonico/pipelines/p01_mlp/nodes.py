@@ -21,6 +21,8 @@ from oscilador_harmonico.utils import (
     cria_grafico_real_previsto_mlp,
     cria_grafico_distribuicao_dados,
     cria_grafico_previsoes_espaco_fases,
+    cria_grafico_interpolacao_completo,
+    cria_grafico_interpolacao_espaco_fases,
     cria_grafico_interpolacao_pontual_mlp,
     cria_grafico_interpolacao_pontual_espaco_fases,
     cria_grafico_interpolacao_pontual_completo,
@@ -468,285 +470,173 @@ def visualiza_previsoes_espaco_fases_node(
     
     return None
 
-
-def interpolacoes_pontuais_tempo_mlp_node(
+def interpola_trajetorias_node(
     model: nn.Module,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
     parameters: Dict[str, Any]
-) -> pd.DataFrame:
+) -> None:
     """
-    Node: Usa o modelo treinado para fazer interpolação entre pontos dos dados de teste.
-    Faz previsões pontuais independentes em pontos que não estão no conjunto original de treino/validação.
+    Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
+    para novas condições iniciais e frequências não vistas durante o treinamento.
+    Este nó simula o modelo em produção.
     
     Args:
         model: Modelo MLP treinado
-        X_test: Dados de teste (entradas) - usado como referência
-        y_test: Dados de teste (saídas reais) - usado como referência
         scaler_X: Scaler das features de entrada
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
-        
-    Returns:
-        DataFrame com os dados interpolados temporalmente e previsões do modelo
     """
-    
+
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
     
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
-    grafico_interpolacao_pontual = f"{output_dir}/interpolacoes_pontuais_real_previsto_mlp.html"
-    grafico_interpolacao_pontual_espaco_fases = f"{output_dir}/interpolacao_pontual_espaco_fases.html"
-    grafico_interpolacao_pontual_temporal = f"{output_dir}/interpolacao_pontual_v_x_vs_t.html"
+    grafico_interpolacao_completa = f"{output_dir}/interpolacao_v_x_vs_t.html"
+    grafico_interpolacao_espaco_fases = f"{output_dir}/interpolacao_espaco_fases.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
     
-    print("\n=== INTERPOLAÇÃO PONTUAL ENTRE DADOS DE TESTE ===")
+    sim_params = parameters.get('simulation', {})
+    dt = sim_params.get('dt', 0.01)
     
-    # agrupa por condições iniciais e frequência (x0, v0, omega)
-    # a interpolação é feita variando o tempo para um mesmo sistema
+    print("\n=== INICIANDO MODELO PARA INTERPOLAÇÃO ===")
     
-    X_test_df = pd.DataFrame(X_test, columns=['x0', 'v0', 'frequencia_angular', 'tempo'])
+    # casos de teste para interpolação
+    casos_teste = [
+        {
+            "nome": "Caso 1: ω=1.0 rad/s",
+            "x0": 0.3,
+            "v0": 0.0,
+            "omega": 1.0,
+            "t_final": 2 * np.pi / 1.0,
+            "cor": CORES_PALETA[0]
+        },
+        {
+            "nome": "Caso 2: ω=2.0 rad/s",
+            "x0": 0.5,
+            "v0": 0.0,
+            "omega": 2.0,
+            "t_final": 2 * np.pi / 2.0,
+            "cor": CORES_PALETA[2]
+        },
+        {
+            "nome": "Caso 3: ω=3.0 rad/s",
+            "x0": 0.0,
+            "v0": 0.8,
+            "omega": 3.0,
+            "t_final": 2 * np.pi / 3.0,
+            "cor": CORES_PALETA[1]
+        },
+        {
+            "nome": "Caso 4: ω=4.0 rad/s",
+            "x0": -0.2,
+            "v0": -0.5,
+            "omega": 4.0,
+            "t_final": 2 * np.pi / 4.0,
+            "cor": CORES_PALETA[4]
+        },
+        {
+            "nome": "Caso 5: ω=5.0 rad/s",
+            "x0": 0.1,
+            "v0": 0.2,
+            "omega": 5.0,
+            "t_final": 2 * np.pi / 5.0,
+            "cor": CORES_PALETA[5]
+        },
+        {
+            "nome": "Caso 6: ω=6.0 rad/s (extrapolação)",
+            "x0": -0.4,
+            "v0": -0.8,
+            "omega": 6.0,
+            "t_final": 2 * np.pi / 6.0,
+            "cor": CORES_PALETA[14]
+        }
+    ]
     
-    # x0, v0, omega constantes para definir sistemas únicos e tempo variável para interpolação
-    sistemas_unicos = X_test_df.groupby(['x0', 'v0', 'frequencia_angular']).size().reset_index()
-    sistemas_unicos = sistemas_unicos.head(3)
+    # gera os nomes das legendas dinamicamente
+    for caso in casos_teste:
+        caso["nome_legenda"] = (
+            f"{caso['nome']}: x0={caso['x0']:.1f} m, "
+            f"v0={caso['v0']:.1f} m/s, "
+            f"ω={caso['omega']:.1f} rad/s, "
+            f"T={caso['t_final']:.2f} s"
+        )
     
-    print(f"\n  Sistemas únicos encontrados: {len(sistemas_unicos)}")
-    print("  Interpolando novos pontos de tempo para cada sistema...")
-        
-    todas_previsoes = []
-    todos_reais_interpolados = []
-    todas_condicoes = []
-    
-    # listas para o gráfico temporal
     tempos_lista = []
-    posicoes_previstas_lista = []
-    velocidades_previstas_lista = []
-    posicoes_reais_lista = []
-    velocidades_reais_lista = []
-    casos_info_lista = []
+    posicoes_lista = []
+    velocidades_lista = []
     
-    # Lista para armazenar todos os dados interpolados
-    dados_interpolados = []
-    
-    for idx, row in sistemas_unicos.iterrows():
-        x0 = row['x0']
-        v0 = row['v0']
-        omega = row['frequencia_angular']
+    print("  Processando casos de teste...")
+    for caso in casos_teste:
+        t_max = caso["t_final"]
+        tempos = np.arange(0, t_max + dt, dt)
         
-        # filtra os pontos originais deste sistema
-        mask = (np.abs(X_test[:, 0] - x0) < 1e-6) & \
-               (np.abs(X_test[:, 1] - v0) < 1e-6) & \
-               (np.abs(X_test[:, 2] - omega) < 1e-6)
-        
-        tempos_originais = X_test[mask, 3]
-        pos_originais = y_test[mask, 0]
-        vel_originais = y_test[mask, 1]
-        
-        if len(tempos_originais) < 5:
-            continue
-        
-        # ordena por tempo
-        idx_sort = np.argsort(tempos_originais)
-        tempos_originais = tempos_originais[idx_sort]
-        pos_originais = pos_originais[idx_sort]
-        vel_originais = vel_originais[idx_sort]
-        
-        # cria tempos interpolados (pontos entre os tempos originais)
-        t_min = tempos_originais.min()
-        t_max = tempos_originais.max()
-        
-        # gera 100 pontos interpolados uniformemente
-        tempos_interpolados = np.linspace(t_min, t_max, 100)
-        
-        # para validação, obtém os valores reais nesses tempos (via solução analítica do OHS)
-        # solução analítica: x(t) = x0*cos(ωt) + (v0/ω)*sin(ωt)
-        #                 v(t) = -x0*ω*sin(ωt) + v0*cos(ωt)
-        pos_reais_interpolados = x0 * np.cos(omega * tempos_interpolados) + (v0 / omega) * np.sin(omega * tempos_interpolados)
-        vel_reais_interpolados = -x0 * omega * np.sin(omega * tempos_interpolados) + v0 * np.cos(omega * tempos_interpolados)
-        
-        # prepara entrada para o modelo
-        X_interpolado = np.zeros((len(tempos_interpolados), 4))
-        X_interpolado[:, 0] = x0
-        X_interpolado[:, 1] = v0
-        X_interpolado[:, 2] = omega
-        X_interpolado[:, 3] = tempos_interpolados
+        # prepara as entradas
+        X_caso = np.zeros((len(tempos), 4))
+        X_caso[:, 0] = caso["x0"]
+        X_caso[:, 1] = caso["v0"]
+        X_caso[:, 2] = caso["omega"]
+        X_caso[:, 3] = tempos
         
         # normaliza e faz previsão
-        X_interpolado_scaled = scaler_X.transform(X_interpolado)
-        X_tensor = torch.tensor(X_interpolado_scaled, dtype=torch.float32).to(device)
+        X_caso_scaled = scaler_X.transform(X_caso)
+        X_tensor = torch.tensor(X_caso_scaled, dtype=torch.float32).to(device)
         
         with torch.no_grad():
-            pred_scaled = model(X_tensor).cpu().numpy()
+            predictions_scaled = model(X_tensor).cpu().numpy()
         
-        pred = scaler_y.inverse_transform(pred_scaled)
+        predictions = scaler_y.inverse_transform(predictions_scaled)
         
-        # armazena para métricas globais
-        todas_previsoes.append(pred)
-        todos_reais_interpolados.append(np.column_stack([pos_reais_interpolados, vel_reais_interpolados]))
-        
-        # armazena informações para gráfico temporal
-        tempos_lista.append(tempos_interpolados)
-        posicoes_previstas_lista.append(pred[:, 0])
-        velocidades_previstas_lista.append(pred[:, 1])
-        posicoes_reais_lista.append(pos_reais_interpolados)
-        velocidades_reais_lista.append(vel_reais_interpolados)
-        
-        # escolhe uma cor da paleta baseada no índice
-        cor = CORES_PALETA[idx % len(CORES_PALETA)]
-        
-        casos_info_lista.append({
-            'x0': x0,
-            'v0': v0,
-            'omega': omega,
-            'cor': cor
-        })
-        
-        # armazena informações para gráficos adicionais
-        todas_condicoes.append({
-            'x0': x0,
-            'v0': v0,
-            'omega': omega,
-            'tempos_originais': tempos_originais,
-            'pos_originais': pos_originais,
-            'vel_originais': vel_originais,
-            'tempos_interpolados': tempos_interpolados,
-            'pos_previstas': pred[:, 0],
-            'vel_previstas': pred[:, 1],
-            'pos_reais_interpolados': pos_reais_interpolados,
-            'vel_reais_interpolados': vel_reais_interpolados
-        })
-        
-        # Cria registros para o DataFrame interpolado temporalmente
-        for k in range(len(tempos_interpolados)):
-            # Encontra o tempo original mais próximo para referência
-            idx_tempo_original = np.argmin(np.abs(tempos_originais - tempos_interpolados[k]))
-            tempo_original_mais_proximo = tempos_originais[idx_tempo_original]
-            pos_original_mais_proximo = pos_originais[idx_tempo_original]
-            vel_original_mais_proximo = vel_originais[idx_tempo_original]
-            
-            dados_interpolados.append({
-                'x0': x0,
-                'v0': v0,
-                'omega': omega,
-                'tempo_original_mais_proximo': tempo_original_mais_proximo,
-                'posicao_original_mais_proxima': pos_original_mais_proximo,
-                'velocidade_original_mais_proxima': vel_original_mais_proximo,
-                'tempo_interpolado': tempos_interpolados[k],
-                'posicao_analitica': pos_reais_interpolados[k],
-                'velocidade_analitica': vel_reais_interpolados[k],
-                'posicao_prevista_mlp': pred[k, 0],
-                'velocidade_prevista_mlp': pred[k, 1],
-                'erro_posicao': pred[k, 0] - pos_reais_interpolados[k],
-                'erro_velocidade': pred[k, 1] - vel_reais_interpolados[k],
-                'erro_abs_posicao': abs(pred[k, 0] - pos_reais_interpolados[k]),
-                'erro_abs_velocidade': abs(pred[k, 1] - vel_reais_interpolados[k]),
-                'erro_rel_posicao_pct': (abs(pred[k, 0] - pos_reais_interpolados[k]) / (abs(pos_reais_interpolados[k]) + 1e-6)) * 100,
-                'erro_rel_velocidade_pct': (abs(pred[k, 1] - vel_reais_interpolados[k]) / (abs(vel_reais_interpolados[k]) + 1e-6)) * 100,
-                'delta_tempo': tempos_interpolados[k] - tempo_original_mais_proximo,
-                't_min_sistema': t_min,
-                't_max_sistema': t_max,
-                'posicao_normalizada_tempo': (tempos_interpolados[k] - t_min) / (t_max - t_min)
-            })
+        tempos_lista.append(tempos)
+        posicoes_lista.append(predictions[:, 0])
+        velocidades_lista.append(predictions[:, 1])
     
-    if len(todas_previsoes) == 0:
-        print("  ERRO: Nenhum sistema válido encontrado para interpolação")
-        return pd.DataFrame()
-        
-    predictions_all = np.vstack(todas_previsoes)
-    y_true_all = np.vstack(todos_reais_interpolados)
+    print("  Gerando gráficos de interpolação...")
     
-    rmse_pos = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
-    rmse_vel = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
-    r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
-    r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
-    
-    print(f"\n  Total de pontos interpolados: {len(predictions_all)}")
-    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
-    print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
-    print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
-    print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
-    
-    # ============================================
-    # GRÁFICO 1: Real vs Previsto
-    # ============================================
-    
-    fig1 = cria_grafico_interpolacao_pontual_mlp(
-        predictions=predictions_all,
-        y_true=y_true_all,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Dados de Teste"
-    )
-    
-    fig1.write_html(grafico_interpolacao_pontual)
-    print(f"\n  Gráfico de interpolação pontual (Real vs Previsto) salvo em {grafico_interpolacao_pontual}")
-    
-    # ============================================
-    # GRÁFICO 2: Espaço de Fases
-    # ============================================
-    
-    y_pos_true = y_true_all[:, 0].reshape(-1, 1)
-    y_vel_true = y_true_all[:, 1].reshape(-1, 1)
-    y_pos_pred = predictions_all[:, 0].reshape(-1, 1)
-    y_vel_pred = predictions_all[:, 1].reshape(-1, 1)
-    
-    fig2 = cria_grafico_interpolacao_pontual_espaco_fases(
-        y_pos_true=y_pos_true,
-        y_vel_true=y_vel_true,
-        y_pos_pred=y_pos_pred,
-        y_vel_pred=y_vel_pred,
-        titulo="Interpolação Pontual do Modelo no Espaço de Fases - MLP vs Solução Analítica"
-    )
-    
-    fig2.write_html(grafico_interpolacao_pontual_espaco_fases)
-    print(f"  Gráfico de interpolação pontual (Espaço de Fases) salvo em {grafico_interpolacao_pontual_espaco_fases}")
-    
-    # ============================================
-    # GRÁFICO 3: Posição e Velocidade vs Tempo
-    # ============================================
-    
-    fig3 = cria_grafico_interpolacao_pontual_completo(
+    fig_completo = cria_grafico_interpolacao_completo(
         tempos_lista=tempos_lista,
-        posicoes_previstas_lista=posicoes_previstas_lista,
-        velocidades_previstas_lista=velocidades_previstas_lista,
-        posicoes_reais_lista=posicoes_reais_lista,
-        velocidades_reais_lista=velocidades_reais_lista,
-        casos_info=casos_info_lista,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        posicoes_lista=posicoes_lista,
+        velocidades_lista=velocidades_lista,
+        casos_info=casos_teste,
+        titulo="Interpolação: Posição e Velocidade vs Tempo"
     )
     
-    fig3.write_html(grafico_interpolacao_pontual_temporal)
-    print(f"  Gráfico de interpolação pontual (Posição/Velocidade vs Tempo) salvo em {grafico_interpolacao_pontual_temporal}")
+    fig_fases = cria_grafico_interpolacao_espaco_fases(
+        posicoes_lista=posicoes_lista,
+        velocidades_lista=velocidades_lista,
+        casos_info=casos_teste,
+        titulo="Interpolação: Espaço de Fases"
+    )
     
-    fig1.show()
-    fig2.show()
-    fig3.show()
+    if fig_completo is not None:
+        fig_completo.write_html(grafico_interpolacao_completa)
+        print(f"Gráfico de interpolação (Posição e Velocidade) salvo em {grafico_interpolacao_completa}")
+    else:
+        print("ERRO: fig_completo é None")
     
-    # Cria DataFrame com os dados interpolados temporalmente
-    df_interpolado_tempo = pd.DataFrame(dados_interpolados)
+    if fig_fases is not None:
+        fig_fases.write_html(grafico_interpolacao_espaco_fases)
+        print(f"Gráfico de interpolação (Espaço de Fases) salvo em {grafico_interpolacao_espaco_fases}")
+    else:
+        print("ERRO: fig_fases é None")
     
-    # Adiciona informações de metadados
-    df_interpolado_tempo.attrs['rmse_posicao'] = rmse_pos
-    df_interpolado_tempo.attrs['rmse_velocidade'] = rmse_vel
-    df_interpolado_tempo.attrs['r2_posicao'] = r2_pos
-    df_interpolado_tempo.attrs['r2_velocidade'] = r2_vel
-    df_interpolado_tempo.attrs['total_pontos'] = len(predictions_all)
-    df_interpolado_tempo.attrs['num_sistemas'] = len(sistemas_unicos)
-    df_interpolado_tempo.attrs['pontos_por_sistema'] = 100
+    print("\n=== MODELO PARA INTERPOLAÇÃO ===")
+    print(f"  Passo de tempo (dt): {dt} s")
+    print(f"  Número de casos testados: {len(casos_teste)}")
+    print(f"  Período mais longo: {2 * np.pi / 1.0:.2f} s")
+    print(f"  Período mais curto: {2 * np.pi / 6.0:.2f} s")
     
-    print(f"\n  Base de dados com interpolação temporal gerada com {len(df_interpolado_tempo)} registros")
-    print(f"  Colunas disponíveis: {list(df_interpolado_tempo.columns)}")
+    fig_completo.show()
+    fig_fases.show()
     
-    return df_interpolado_tempo
+    return None
 
-
-def interpolacoes_pontuais_x0_v0_w_mlp_node(
+def interpolacoes_pontuais_mlp_node(
     model: nn.Module,
     X_test: np.ndarray,
     y_test: np.ndarray,
@@ -767,7 +657,7 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
         parameters: Parâmetros do pipeline
         
     Returns:
-        DataFrame com os dados interpolados e previsões do modelo
+        DataFrame com os dados interpolados (condições iniciais, frequências e tempos) e previsões do modelo
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -809,8 +699,6 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
     posicoes_reais_lista = []
     velocidades_reais_lista = []
     casos_info_lista = []
-    
-    # Lista para armazenar todos os dados interpolados
     dados_interpolados = []
     
     for idx, row in sistemas_unicos.iterrows():
@@ -836,9 +724,7 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
         pos_originais = pos_originais[idx_sort]
         vel_originais = vel_originais[idx_sort]
         
-        # mantém os tempos originais, interpola entre condições iniciais
-        # para diferentes sistemas
-        
+        # interpola entre condições iniciais, frequências e tempos
         # encontra sistemas vizinhos com valores diferentes de x0, v0, omega
         outros_sistemas = sistemas_unicos[~((sistemas_unicos['x0'] == x0) & 
                                             (sistemas_unicos['v0'] == v0) & 
@@ -847,11 +733,11 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
         if len(outros_sistemas) == 0:
             continue
         
-        # para cada tempo original, cria pontos interpolados entre as condições iniciais
-        tempos_interpolados = tempos_originais.copy()
+        # cria tempos interpolados (pontos entre os tempos originais)
+        t_min = tempos_originais.min()
+        t_max = tempos_originais.max()
         
-        # gera fatores de interpolação (entre 0 e 1)
-        # interpola entre o sistema atual (alpha=1) e outro sistema (alpha=0)
+        # gera fatores de interpolação para condições iniciais (entre 0 e 1)
         alphas = np.linspace(0, 1, 10)  # 10 pontos interpolados entre os sistemas
         
         for alpha in alphas:
@@ -862,12 +748,17 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
             v0_vizinho = sistema_vizinho['v0']
             omega_vizinho = sistema_vizinho['frequencia_angular']
             
-            # interpola as condições iniciais
+            # interpola as condições iniciais e frequência
             x0_interp = (1 - alpha) * x0_vizinho + alpha * x0
             v0_interp = (1 - alpha) * v0_vizinho + alpha * v0
             omega_interp = (1 - alpha) * omega_vizinho + alpha * omega
             
-            # calcula solução analítica para os parâmetros interpolados
+            # gera 100 pontos de tempo interpolados uniformemente
+            tempos_interpolados = np.linspace(t_min, t_max, 100)
+            
+            # para validação, obtém os valores reais nesses tempos (via solução analítica do OHS)
+            # solução analítica: x(t) = x0*cos(ωt) + (v0/ω)*sin(ωt)
+            #                    v(t) = -x0*ω*sin(ωt) + v0*cos(ωt)
             pos_reais_interpolados = x0_interp * np.cos(omega_interp * tempos_interpolados) + \
                                      (v0_interp / omega_interp) * np.sin(omega_interp * tempos_interpolados)
             vel_reais_interpolados = -x0_interp * omega_interp * np.sin(omega_interp * tempos_interpolados) + \
@@ -925,8 +816,14 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
                 'vel_reais_interpolados': vel_reais_interpolados
             })
             
-            # cria registros para o DataFrame interpolado
+            # registros para o DataFrame interpolado (condições iniciais, frequências e tempos)
             for k in range(len(tempos_interpolados)):
+                # encontra o tempo original mais próximo para referência
+                idx_tempo_original = np.argmin(np.abs(tempos_originais - tempos_interpolados[k]))
+                tempo_original_mais_proximo = tempos_originais[idx_tempo_original]
+                pos_original_mais_proximo = pos_originais[idx_tempo_original]
+                vel_original_mais_proximo = vel_originais[idx_tempo_original]
+                
                 dados_interpolados.append({
                     'x0_original': x0,
                     'v0_original': v0,
@@ -938,7 +835,10 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
                     'x0_interpolado': x0_interp,
                     'v0_interpolado': v0_interp,
                     'omega_interpolado': omega_interp,
-                    'tempo': tempos_interpolados[k],
+                    'tempo_original_mais_proximo': tempo_original_mais_proximo,
+                    'posicao_original_mais_proxima': pos_original_mais_proximo,
+                    'velocidade_original_mais_proxima': vel_original_mais_proximo,
+                    'tempo_interpolado': tempos_interpolados[k],
                     'posicao_analitica': pos_reais_interpolados[k],
                     'velocidade_analitica': vel_reais_interpolados[k],
                     'posicao_prevista_mlp': pred[k, 0],
@@ -946,7 +846,13 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
                     'erro_posicao': pred[k, 0] - pos_reais_interpolados[k],
                     'erro_velocidade': pred[k, 1] - vel_reais_interpolados[k],
                     'erro_abs_posicao': abs(pred[k, 0] - pos_reais_interpolados[k]),
-                    'erro_abs_velocidade': abs(pred[k, 1] - vel_reais_interpolados[k])
+                    'erro_abs_velocidade': abs(pred[k, 1] - vel_reais_interpolados[k]),
+                    'erro_rel_posicao_pct': (abs(pred[k, 0] - pos_reais_interpolados[k]) / (abs(pos_reais_interpolados[k]) + 1e-6)) * 100,
+                    'erro_rel_velocidade_pct': (abs(pred[k, 1] - vel_reais_interpolados[k]) / (abs(vel_reais_interpolados[k]) + 1e-6)) * 100,
+                    'delta_tempo': tempos_interpolados[k] - tempo_original_mais_proximo,
+                    't_min_sistema': t_min,
+                    't_max_sistema': t_max,
+                    'posicao_normalizada_tempo': (tempos_interpolados[k] - t_min) / (t_max - t_min)
                 })
     
     if len(todas_previsoes) == 0:
@@ -1021,17 +927,19 @@ def interpolacoes_pontuais_x0_v0_w_mlp_node(
     fig2.show()
     fig3.show()
     
+    # DataFrame com os dados interpolados (condições iniciais, frequências e tempos)
     df_interpolado = pd.DataFrame(dados_interpolados)
     
-    # adiciona informações de metadados
     df_interpolado.attrs['rmse_posicao'] = rmse_pos
     df_interpolado.attrs['rmse_velocidade'] = rmse_vel
     df_interpolado.attrs['r2_posicao'] = r2_pos
     df_interpolado.attrs['r2_velocidade'] = r2_vel
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_sistemas'] = len(sistemas_unicos)
+    df_interpolado.attrs['pontos_por_sistema'] = 100
+    df_interpolado.attrs['pontos_por_combinacao'] = 10  # alphas
     
-    print(f"\n  Base de dados interpolada gerada com {len(df_interpolado)} registros")
+    print(f"\n  Base de dados com interpolação de condições iniciais, frequências e tempos gerada com {len(df_interpolado)} registros")
     print(f"  Colunas disponíveis: {list(df_interpolado.columns)}")
     
     return df_interpolado

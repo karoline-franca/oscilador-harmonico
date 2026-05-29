@@ -12,8 +12,8 @@ from .nodes import (
     visualiza_previsoes_mlp_node,
     visualiza_distribuicao_dados_separado,
     visualiza_previsoes_espaco_fases_node,
-    interpolacoes_pontuais_tempo_mlp_node,
-    interpolacoes_pontuais_x0_v0_w_mlp_node,
+    interpola_trajetorias_node,
+    interpolacoes_pontuais_mlp_node,
 )
 
 
@@ -75,17 +75,17 @@ def create_pipeline(**kwargs) -> Pipeline:
         ),
 
         node(
-            func=interpolacoes_pontuais_tempo_mlp_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
-            outputs="base_interpolada_tempo",
-            name="node_interpolacoes_pontuais_tempo_mlp",
+            func=interpola_trajetorias_node,
+            inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
+            outputs=None,
+            name="node_interpola_trajetorias",
         ),
 
         node(
-            func=interpolacoes_pontuais_x0_v0_w_mlp_node,
+            func=interpolacoes_pontuais_mlp_node,
             inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
-            outputs="base_interpolada_x0_v0_w",
-            name="node_interpolacoes_pontuais_x0_v0_w_mlp",
+            outputs="base_interpolada",
+            name="node_interpolacoes_pontuais_mlp",
         ),
 
     ])

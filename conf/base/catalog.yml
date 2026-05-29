@@ -97,20 +97,9 @@ metricas_mlp:
   type: json.JSONDataset
   filepath: data/08_reporting/${runtime_params:data_version,default_v1}/metricas_mlp.json
 
-base_interpolada_tempo:
+base_interpolada:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_tempo.csv
-  load_args:
-    sep: ';'
-    encoding: 'latin-1'
-  save_args:
-    index: False
-    sep: ';'
-    encoding: 'latin-1'
-
-base_interpolada_x0_v0_w:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_x0_v0_w.csv
+  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
