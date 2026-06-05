@@ -25,7 +25,7 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
         DataFrame com condições iniciais (x0, v0).
     """
     intervals = parameters['intervals']
-    n_condicoes = parameters['simulation']['n_condicoes_por_sistema']
+    n_condicoes = parameters['simulation']['n_condicoes_iniciais']
     seed = parameters['seed']
     
     if seed is not None:
@@ -45,51 +45,38 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
 
 def gera_frequencias_angulares_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     """
-    Node: Gera frequências angulares aleatórias estratificadas.
+    Node: Gera frequência angular única (estratificada para compatibilidade).
     
     Args:
         parameters: Parâmetros do pipeline.
         
     Returns:
-        DataFrame com frequências angulares por sistema.
+        DataFrame com frequência angular para o sistema único.
     """
     intervals = parameters['intervals']
-    n_sistemas = parameters['simulation']['n_sistemas']
     seed = parameters['seed']
     
     if seed is not None:
         np.random.seed(seed)
     
-    # distribuição log-uniform (mais amostras em baixas frequências)
-    log_omega_min = np.log10(intervals['omega_min'])
-    log_omega_max = np.log10(intervals['omega_max'])
+    # frequência única definida no arquivo parameters.yml
+    omega = intervals['omega']
     
-    log_estratos = np.linspace(log_omega_min, log_omega_max, n_sistemas + 1)
-    
-    omegas = []
-    for i in range(n_sistemas):
-        log_omega = np.random.uniform(log_estratos[i], log_estratos[i+1])
-        omega = 10 ** log_omega
-        omegas.append(omega)
-    
-    np.random.shuffle(omegas)
-    
-    descricoes = []
-    for omega in omegas:
-        if omega < 1.0:
-            descricoes.append("Muito Lento")
-        elif omega < 3.0:
-            descricoes.append("Lento")
-        elif omega < 6.0:
-            descricoes.append("Médio")
-        elif omega < 9.0:
-            descricoes.append("Rápido")
-        else:
-            descricoes.append("Muito Rápido")
+    # descrição baseada no valor da frequência
+    if omega < 1.0:
+        descricao = "Muito Lento"
+    elif omega < 3.0:
+        descricao = "Lento"
+    elif omega < 6.0:
+        descricao = "Médio"
+    elif omega < 9.0:
+        descricao = "Rápido"
+    else:
+        descricao = "Muito Rápido"
     
     df = pd.DataFrame({
-        'frequencia_angular_rads': omegas,
-        'descricao_sistema': descricoes
+        'frequencia_angular_rads': [omega],
+        'descricao_sistema': [descricao]
     })
     
     return df
@@ -122,7 +109,7 @@ def executa_simulacao_rk4_node(
         device=device
     )
     
-    # encontra sistema mais lento
+    # encontra sistema mais lento (único sistema)
     idx_lento = np.argmin(frequencias)
     periodo_lento = oscilador.periodos.cpu().numpy()[idx_lento]
     
@@ -161,15 +148,6 @@ def gera_base_consolidada_node(
 ) -> pd.DataFrame:
     """
     Node: Constrói a base de dados consolidada.
-    
-    Args:
-        solucao: Dicionário com resultados da simulação.
-        condicoes_iniciais: DataFrame original.
-        frequencias_angulares: DataFrame original.
-        metadados: DataFrame com metadados.
-        
-    Returns:
-        DataFrame consolidado.
     """
     dados = []
     
@@ -179,26 +157,33 @@ def gera_base_consolidada_node(
     
     for i_sistema in range(n_sistemas):
         for i_cond in range(n_condicoes):
+            # cria identificador único da trajetória
+            id_trajetoria = f"sistema_{i_sistema}_condicao_{i_cond}"
+            
             for j in range(n_passos):
                 dados.append({
                     'sistema_id': i_sistema,
                     'simulacao_id': i_cond,
-                    'tempo': formatar_numero_pt_br(solucao['tempo'][j]),
-                    'posicao': formatar_numero_pt_br(solucao['posicao'][j, i_cond, i_sistema]),
-                    'velocidade': formatar_numero_pt_br(solucao['velocidade'][j, i_cond, i_sistema]),
+                    'id_trajetoria': id_trajetoria,
+                    'tempo': float(solucao['tempo'][j]),
+                    'posicao': float(solucao['posicao'][j, i_cond, i_sistema]),
+                    'velocidade': float(solucao['velocidade'][j, i_cond, i_sistema]),
                     'descricao_sistema': frequencias_angulares.iloc[i_sistema]['descricao_sistema'],
-                    'frequencia_angular': formatar_numero_pt_br(solucao['frequencias_angulares'][i_sistema]),
-                    'frequencia_linear': formatar_numero_pt_br(solucao['frequencias_lineares'][i_sistema]),
-                    'periodo_s': formatar_numero_pt_br(solucao['periodos'][i_sistema]),
-                    'x0': formatar_numero_pt_br(solucao['condicoes_iniciais'][i_cond, 0]),
-                    'v0': formatar_numero_pt_br(solucao['condicoes_iniciais'][i_cond, 1]),
-                    'amplitude_max': formatar_numero_pt_br(solucao['amplitudes'][i_cond, i_sistema]),
-                    'energia_cinetica': formatar_numero_pt_br(solucao['energia_cinetica'][j, i_cond, i_sistema]),
-                    'energia_potencial': formatar_numero_pt_br(solucao['energia_potencial'][j, i_cond, i_sistema]),
-                    'energia_mecanica': formatar_numero_pt_br(solucao['energia_mecanica'][j, i_cond, i_sistema]),
+                    'frequencia_angular': float(solucao['frequencias_angulares'][i_sistema]),
+                    'frequencia_linear': float(solucao['frequencias_lineares'][i_sistema]),
+                    'periodo_s': float(solucao['periodos'][i_sistema]),
+                    'x0': float(solucao['condicoes_iniciais'][i_cond, 0]),
+                    'v0': float(solucao['condicoes_iniciais'][i_cond, 1]),
+                    'amplitude_max': float(solucao['amplitudes'][i_cond, i_sistema]),
+                    'energia_cinetica': float(solucao['energia_cinetica'][j, i_cond, i_sistema]),
+                    'energia_potencial': float(solucao['energia_potencial'][j, i_cond, i_sistema]),
+                    'energia_mecanica': float(solucao['energia_mecanica'][j, i_cond, i_sistema]),
                 })
     
-    return pd.DataFrame(dados)
+    df = pd.DataFrame(dados)
+    df['id_trajetoria'] = df['id_trajetoria'].astype(str)
+
+    return df
 
 
 def cria_visualizacoes_node(
@@ -246,4 +231,6 @@ def cria_visualizacoes_node(
         fig2d.update_layout(title="Erro ao gerar gráfico 2D")
         fig2d.write_html(grafico_2d_path)
     
+    fig2d.show()
+    fig3d.show()
     return None

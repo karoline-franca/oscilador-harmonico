@@ -14,6 +14,7 @@ from .nodes import (
     visualiza_previsoes_espaco_fases_node,
     interpola_trajetorias_node,
     interpolacoes_pontuais_mlp_node,
+    interpola_entre_trajetorias_mlp_node,
 )
 
 
@@ -28,7 +29,8 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=prepara_dados_mlp_node,
             inputs=["base_oscilador", "parameters"],
             outputs=["X_train", "y_train", "X_val", "y_val", "X_test", "y_test", 
-                     "input_dim", "output_dim", "scaler_X", "scaler_y"],
+                    "input_dim", "output_dim", "scaler_X", "scaler_y",
+                    "trajetorias_train", "trajetorias_val", "trajetorias_test"],
             name="node_prepara_dados_mlp",
         ),
 
@@ -84,8 +86,15 @@ def create_pipeline(**kwargs) -> Pipeline:
         node(
             func=interpolacoes_pontuais_mlp_node,
             inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
-            outputs="base_interpolada",
+            outputs="base_interpolada_pontual",
             name="node_interpolacoes_pontuais_mlp",
+        ),
+
+        node(
+            func=interpola_entre_trajetorias_mlp_node,
+            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
+            outputs="base_interpolada_trajetorias",
+            name="node_interpola_entre_trajetorias_mlp",
         ),
 
     ])

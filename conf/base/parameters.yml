@@ -1,12 +1,11 @@
 simulation:
-  n_sistemas: 5
-  n_condicoes_por_sistema: 500
+  n_sistemas: 1
+  n_condicoes_iniciais: 500
   num_periodos: 1
   dt: 0.01
 
-intervals:
-  omega_min: 1.0        
-  omega_max: 5.0       
+intervals:       
+  omega: 5.0       
   x0_min: -0.5          
   x0_max: 0.5
   v0_min: -1.0          
