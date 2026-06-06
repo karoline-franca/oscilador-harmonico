@@ -465,9 +465,7 @@ def visualiza_previsoes_mlp_node(
         titulo="Real vs Previsto - Dados de Teste (Por Trajetória)"
     )
     
-    fig.write_html(grafico_previsoes_mlp)
-    print(f"Gráfico de previsões salvo em {grafico_previsoes_mlp}")
-    
+    fig.write_html(grafico_previsoes_mlp)    
     fig.show()
     
     return None
@@ -539,15 +537,13 @@ def visualiza_previsoes_espaco_fases_node(
         titulo="Previsões do Modelo no Espaço de Fases - Dados de Teste (Por Trajetória)"
     )
     
-    fig.write_html(grafico_previsoes_espaco_fases)
-    print(f"\n  Gráfico de previsões no espaço de fases salvo em {grafico_previsoes_espaco_fases}")
-    
+    fig.write_html(grafico_previsoes_espaco_fases)    
     fig.show()
     
     return None
 
 
-def interpola_trajetorias_node(
+def interpola_trajetorias_avulsas_node(
     model: nn.Module,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
@@ -556,7 +552,6 @@ def interpola_trajetorias_node(
     """
     Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
     para novas condições iniciais não vistas durante o treinamento.
-    Este nó simula o modelo em produção.
     Nota: A frequência angular é fixa para todos os casos.
     
     Args:
@@ -572,8 +567,8 @@ def interpola_trajetorias_node(
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
-    grafico_interpolacao_completa = f"{output_dir}/interpolacao_v_x_vs_t.html"
-    grafico_interpolacao_espaco_fases = f"{output_dir}/interpolacao_espaco_fases.html"
+    grafico_interpolacao_completa = f"{output_dir}/interpolacao_avulsa_v_x_vs_t.html"
+    grafico_interpolacao_espaco_fases = f"{output_dir}/interpolacao_avulsa_espaco_fases.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -584,12 +579,10 @@ def interpola_trajetorias_node(
     intervals = parameters.get('intervals', {})
     omega_fixo = intervals.get('omega', 5.0)
     
-    print("\n=== INICIANDO MODELO PARA INTERPOLAÇÃO ===")
-    
     # casos de teste para interpolação (apenas condições iniciais variam)
     casos_teste = [
         {
-            "nome": "Caso 1: x0=0.3, v0=0.0",
+            "nome": "Caso 1",
             "x0": 0.3,
             "v0": 0.0,
             "omega": omega_fixo,
@@ -597,7 +590,7 @@ def interpola_trajetorias_node(
             "cor": CORES_PALETA[0]
         },
         {
-            "nome": "Caso 2: x0=-0.3, v0=1.0",
+            "nome": "Caso 2",
             "x0": -0.3,
             "v0": 1.0,
             "omega": omega_fixo,
@@ -605,7 +598,7 @@ def interpola_trajetorias_node(
             "cor": CORES_PALETA[1]
         },
         {
-            "nome": "Caso 3: x0=0.5, v0=-1.0",
+            "nome": "Caso 3",
             "x0": 0.5,
             "v0": -1.0,
             "omega": omega_fixo,
@@ -613,20 +606,12 @@ def interpola_trajetorias_node(
             "cor": CORES_PALETA[2]
         },
         {
-            "nome": "Caso 4: x0=-0.1, v0=0.5",
+            "nome": "Caso 4",
             "x0": -0.1,
             "v0": 0.5,
             "omega": omega_fixo,
             "t_final": 2 * np.pi / omega_fixo,
             "cor": CORES_PALETA[3]
-        },
-        {
-            "nome": "Caso 5: x0=0.0, v0=-1.0",
-            "x0": 0.0,
-            "v0": -1.0,
-            "omega": omega_fixo,
-            "t_final": 2 * np.pi / omega_fixo,
-            "cor": CORES_PALETA[4]
         },
 
     ]
@@ -648,7 +633,7 @@ def interpola_trajetorias_node(
         t_max = caso["t_final"]
         tempos = np.arange(0, t_max + dt, dt)
         
-        # prepara as entradas (apenas x0, v0, tempo - sem ω)
+        # prepara as entradas (apenas x0, v0, tempo)
         X_caso = np.zeros((len(tempos), 3))
         X_caso[:, 0] = caso["x0"]
         X_caso[:, 1] = caso["v0"]
@@ -672,27 +657,18 @@ def interpola_trajetorias_node(
         posicoes_lista=posicoes_lista,
         velocidades_lista=velocidades_lista,
         casos_info=casos_teste,
-        titulo="Interpolação: Posição e Velocidade vs Tempo (Por Trajetória)"
+        titulo="Interpolação Avulsa: Posição e Velocidade vs Tempo (Por Trajetória)"
     )
     
     fig_fases = cria_grafico_interpolacao_espaco_fases(
         posicoes_lista=posicoes_lista,
         velocidades_lista=velocidades_lista,
         casos_info=casos_teste,
-        titulo="Interpolação: Espaço de Fases (Por Trajetória)"
+        titulo="Interpolação Avulsa: Espaço de Fases (Por Trajetória)"
     )
     
-    if fig_completo is not None:
-        fig_completo.write_html(grafico_interpolacao_completa)
-        print(f"Gráfico de interpolação (Posição e Velocidade) salvo em {grafico_interpolacao_completa}")
-    else:
-        print("ERRO: fig_completo é None")
-    
-    if fig_fases is not None:
-        fig_fases.write_html(grafico_interpolacao_espaco_fases)
-        print(f"Gráfico de interpolação (Espaço de Fases) salvo em {grafico_interpolacao_espaco_fases}")
-    else:
-        print("ERRO: fig_fases é None")
+    fig_completo.write_html(grafico_interpolacao_completa)
+    fig_fases.write_html(grafico_interpolacao_espaco_fases)
     
     print("\n=== MODELO PARA INTERPOLAÇÃO ===")
     print(f"  Passo de tempo (dt): {dt} s")
@@ -1148,7 +1124,6 @@ def interpola_entre_trajetorias_mlp_node(
     )
     
     fig1.write_html(grafico_interpolacao_entre_trajetorias)
-    print(f"\n  Gráfico de interpolação (Real vs Previsto) salvo em {grafico_interpolacao_entre_trajetorias}")
     
     # ============================================
     # GRÁFICO 2: Espaço de Fases
@@ -1168,7 +1143,6 @@ def interpola_entre_trajetorias_mlp_node(
     )
     
     fig2.write_html(grafico_interpolacao_entre_trajetorias_espaco_fases)
-    print(f"  Gráfico de interpolação (Espaço de Fases) salvo em {grafico_interpolacao_entre_trajetorias_espaco_fases}")
     
     # ============================================
     # GRÁFICO 3: Posição e Velocidade vs Tempo
@@ -1185,7 +1159,6 @@ def interpola_entre_trajetorias_mlp_node(
     )
     
     fig3.write_html(grafico_interpolacao_entre_trajetorias_temporal)
-    print(f"  Gráfico de interpolação (Posição/Velocidade vs Tempo) salvo em {grafico_interpolacao_entre_trajetorias_temporal}")
     
     fig1.show()
     fig2.show()
@@ -1204,8 +1177,8 @@ def interpola_entre_trajetorias_mlp_node(
     df_interpolado.attrs['omega_fixo'] = omega_fixo
     
     print(f"\n  Base de dados com interpolação entre trajetórias gerada com {len(df_interpolado)} registros")
-    print(f"  - Trajetória 1 (α=0): (x0={x0_1:.3f}, v0={v0_1:.3f}) - Amplitude: {np.sqrt(x0_1**2 + (v0_1/omega_fixo)**2):.3f}")
-    print(f"  - Trajetória 2 (α=1): (x0={x0_2:.3f}, v0={v0_2:.3f}) - Amplitude: {np.sqrt(x0_2**2 + (v0_2/omega_fixo)**2):.3f}")
+    print(f"  - Trajetória 1: (x0={x0_1:.3f}, v0={v0_1:.3f}) - Amplitude: {np.sqrt(x0_1**2 + (v0_1/omega_fixo)**2):.3f}")
+    print(f"  - Trajetória 2: (x0={x0_2:.3f}, v0={v0_2:.3f}) - Amplitude: {np.sqrt(x0_2**2 + (v0_2/omega_fixo)**2):.3f}")
     print(f"  - {len(alphas)} níveis de interpolação")
     print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
 
@@ -1268,7 +1241,6 @@ def interpola_entre_trajetorias_mlp_node(
     
     grafico_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases_detalhado.html"
     fig4.write_html(grafico_entre_trajetorias_espaco_fases)
-    print(f"  Gráfico de interpolação entre trajetórias (Espaço de Fases Detalhado) salvo em {grafico_entre_trajetorias_espaco_fases}")
     
     fig4.show()
 

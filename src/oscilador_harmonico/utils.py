@@ -329,13 +329,14 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             text=f"{titulo}<br>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
-            x=0.5,
+            x=0.45,
             font=dict(size=16)
         ),
         width=1000,
         height=500,
         showlegend=True,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.5,
             xanchor='left',
@@ -443,7 +444,7 @@ def cria_grafico_distribuicao_dados(
                  f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
                  f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
                  f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
-            x=0.5,
+            x=0.45,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -451,6 +452,7 @@ def cria_grafico_distribuicao_dados(
         width=1400,
         height=1000,
         legend=dict(
+            title="Legenda",
             x=0.75,
             y=0.98,
             bgcolor='rgba(255, 255, 255, 0.9)',
@@ -548,7 +550,7 @@ def cria_grafico_previsoes_espaco_fases(
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
-            font=dict(size=14)
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -556,8 +558,8 @@ def cria_grafico_previsoes_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.75,
-            y=0.98,
+            x=0.95,
+            y=0.80,
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1
@@ -844,7 +846,6 @@ def cria_grafico_interpolacao_pontual_mlp(
     unidades = ['m', 'm/s']
     
     for i in range(2):
-        # adiciona pontos de dispersão
         fig.add_trace(
             go.Scatter(
                 x=y_true[:, i],
@@ -866,7 +867,7 @@ def cria_grafico_interpolacao_pontual_mlp(
             row=1, col=i+1
         )
         
-        # adiciona linha y=x (referência)
+        # linha y=x (referência)
         min_val = min(y_true[:, i].min(), predictions[:, i].min())
         max_val = max(y_true[:, i].max(), predictions[:, i].max())
         
@@ -907,13 +908,14 @@ def cria_grafico_interpolacao_pontual_mlp(
             text=f"{titulo}<br>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
-            x=0.5,
+            x=0.45,
             font=dict(size=16)
         ),
         width=1000,
         height=500,
         showlegend=True,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.5,
             xanchor='left',
@@ -999,7 +1001,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
-            font=dict(size=14)
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -1007,8 +1009,10 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.75,
-            y=0.98,
+            x=0.95,
+            y=0.80,
+            xanchor='left',
+            yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1
@@ -1171,6 +1175,7 @@ def cria_grafico_interpolacao_pontual_completo(
         width=1400,
         height=900,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.98,
             xanchor='left',
@@ -1183,7 +1188,7 @@ def cria_grafico_interpolacao_pontual_completo(
         plot_bgcolor='black',
         paper_bgcolor='black',
         xaxis=dict(
-            showgrid=False,
+            showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
             zerolinecolor='white',
@@ -1192,7 +1197,7 @@ def cria_grafico_interpolacao_pontual_completo(
             tickfont_color='white'
         ),
         yaxis=dict(
-            showgrid=False,
+            showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
             zerolinecolor='white',
@@ -1241,10 +1246,10 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         x=trajetoria1_pos,
         y=trajetoria1_vel,
         mode='lines',
-        name=f"Trajetória 1 (α=0): x₀={caso_info.get('x0_1', 0):.3f} m, v₀={caso_info.get('v0_1', 0):.3f} m/s",
+        name=f"Trajetória 1: x₀={caso_info.get('x0_1', 0):.3f} m, v₀={caso_info.get('v0_1', 0):.3f} m/s",
         line=dict(color='blue', width=3, dash='solid'),
         hovertemplate=(
-            f"<b>Trajetória 1 (α=0)</b><br>" +
+            f"<b>Trajetória 1</b><br>" +
             f"x₀ = {caso_info.get('x0_1', 0):.3f} m<br>" +
             f"v₀ = {caso_info.get('v0_1', 0):.3f} m/s<br>" +
             f"Posição: %{{x:.3f}} m<br>" +
@@ -1258,10 +1263,10 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         x=trajetoria2_pos,
         y=trajetoria2_vel,
         mode='lines',
-        name=f"Trajetória 2 (α=1): x₀={caso_info.get('x0_2', 0):.3f} m, v₀={caso_info.get('v0_2', 0):.3f} m/s",
+        name=f"Trajetória 2: x₀={caso_info.get('x0_2', 0):.3f} m, v₀={caso_info.get('v0_2', 0):.3f} m/s",
         line=dict(color='red', width=3, dash='solid'),
         hovertemplate=(
-            f"<b>Trajetória 2 (α=1)</b><br>" +
+            f"<b>Trajetória 2</b><br>" +
             f"x₀ = {caso_info.get('x0_2', 0):.3f} m<br>" +
             f"v₀ = {caso_info.get('v0_2', 0):.3f} m/s<br>" +
             f"Posição: %{{x:.3f}} m<br>" +
@@ -1289,11 +1294,11 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
                 x=posicoes,
                 y=velocidades,
                 mode='lines',
-                name=f"Trajetória Interpolada (α={alpha:.2f}): x₀={x0_interp:.3f} m, v₀={v0_interp:.3f} m/s",
+                name=f"Trajetória Interpolada: x₀={x0_interp:.3f} m, v₀={v0_interp:.3f} m/s",
                 line=dict(color=cor, width=3, dash='dash'),
                 opacity=0.7,
                 hovertemplate=(
-                    f"<b>Interpolação α={alpha:.2f}</b><br>" +
+                    f"<b>Trajetória Interpolada</b><br>" +
                     f"x₀_interp = {x0_interp:.3f} m<br>" +
                     f"v₀_interp = {v0_interp:.3f} m/s<br>" +
                     f"Posição: %{{x:.3f}} m<br>" +
@@ -1313,10 +1318,10 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
                     symbol='circle',
                     line=dict(color='white', width=1)
                 ),
-                name=f"Início α={alpha:.2f}",
+                name=f"Início Trajetória Interpolada",
                 showlegend=False,
                 hovertemplate=(
-                    f"<b>Condição Inicial α={alpha:.2f}</b><br>" +
+                    f"<b>Início Trajetória Interpolada</b><br>" +
                     f"x₀ = {x0_interp:.3f} m<br>" +
                     f"v₀ = {v0_interp:.3f} m/s<br>" +
                     f"<extra></extra>"
@@ -1344,28 +1349,11 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         showlegend=False,
         hovertemplate=f"<b>Início Trajetória 2</b><br>x₀ = {caso_info.get('x0_2', 0):.3f} m<br>v₀ = {caso_info.get('v0_2', 0):.3f} m/s<br><extra></extra>"
     ))
-
-    fig.add_annotation(
-        x=-0.02,
-        y=1.05,
-        xref="paper",
-        yref="paper",
-        text="<b>Interpolação Linear entre Condições Iniciais:</b><br>" +
-             "x₀(α) = (1-α)·x₀₁ + α·x₀₂<br>" +
-             "v₀(α) = (1-α)·v₀₁ + α·v₀₂",
-        showarrow=False,
-        font=dict(size=12, color='black'),
-        bgcolor='white',
-        bordercolor='black',
-        borderwidth=1,
-        borderpad=4,
-        align='left'
-    )
      
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br><sub>Interpolação entre duas trajetórias no espaço de fases</sub>",
-            x=0.5,
+            text=f"{titulo}<br>",
+            x=0.45,
             font=dict(size=16, color='white')
         ),
         xaxis_title="Posição (m)",
@@ -1373,8 +1361,11 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         width=1400,
         height=1000,
         legend=dict(
+            title="Legenda",
             x=0.95,
-            y=1.05,
+            y=0.80,
+            xanchor='left',
+            yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
@@ -1384,7 +1375,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         plot_bgcolor='black',
         paper_bgcolor='black',
         xaxis=dict(
-            showgrid=True,
+            showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,
@@ -1394,7 +1385,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             tickfont_color='white'
         ),
         yaxis=dict(
-            showgrid=True,
+            showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,

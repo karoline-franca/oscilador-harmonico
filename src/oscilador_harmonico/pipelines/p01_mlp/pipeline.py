@@ -12,7 +12,7 @@ from .nodes import (
     visualiza_previsoes_mlp_node,
     visualiza_distribuicao_dados_separado,
     visualiza_previsoes_espaco_fases_node,
-    interpola_trajetorias_node,
+    interpola_trajetorias_avulsas_node,
     interpolacoes_pontuais_mlp_node,
     interpola_entre_trajetorias_mlp_node,
 )
@@ -77,10 +77,10 @@ def create_pipeline(**kwargs) -> Pipeline:
         ),
 
         node(
-            func=interpola_trajetorias_node,
+            func=interpola_trajetorias_avulsas_node,
             inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
             outputs=None,
-            name="node_interpola_trajetorias",
+            name="node_interpola_trajetorias_avulsas",
         ),
 
         node(
