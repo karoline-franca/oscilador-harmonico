@@ -671,7 +671,7 @@ def interpola_trajetorias_avulsas_node(
     fig_fases.write_html(grafico_interpolacao_espaco_fases)
     
     print("\n=== MODELO PARA INTERPOLAÇÃO ===")
-    print(f"  Passo de tempo (dt): {dt} s")
+    print(f"  Passo de tempo: {dt} s")
     print(f"  Período: {2 * np.pi / omega_fixo:.2f} s")
     print(f"  Número de casos testados: {len(casos_teste)}")
     

@@ -524,7 +524,7 @@ def cria_grafico_previsoes_espaco_fases(
         x=y_pos_true.flatten(),
         y=y_vel_true.flatten(),
         mode='markers',
-        name='Dados Reais',
+        name='Dados de Teste',
         marker=dict(
             color='#00BFFF',
             size=3,
@@ -532,7 +532,7 @@ def cria_grafico_previsoes_espaco_fases(
             symbol='circle'
         ),
         hovertemplate=(
-            f"<b>Dados Reais</b><br>" +
+            f"<b>Dados de Teste</b><br>" +
             f"Posição: %{{x:.3f}} m<br>" +
             f"Velocidade: %{{y:.3f}} m/s<br>" +
             f"<extra></extra>"
@@ -677,6 +677,7 @@ def cria_grafico_interpolacao_completo(
         width=1400,
         height=900,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.98,
             xanchor='left',
@@ -689,7 +690,7 @@ def cria_grafico_interpolacao_completo(
         plot_bgcolor='black',
         paper_bgcolor='black',
         xaxis=dict(
-            showgrid=False,
+            showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
             zerolinecolor='white',
@@ -698,7 +699,7 @@ def cria_grafico_interpolacao_completo(
             tickfont_color='white'
         ),
         yaxis=dict(
-            showgrid=False,
+            showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
             zerolinecolor='white',
@@ -787,8 +788,9 @@ def cria_grafico_interpolacao_espaco_fases(
         width=1400,
         height=1000,
         legend=dict(
-            x=0.75,
-            y=0.98,
+            title="Legenda",
+            x=0.95,
+            y=0.85,
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1
