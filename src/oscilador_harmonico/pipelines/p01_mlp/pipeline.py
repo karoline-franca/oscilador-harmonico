@@ -8,7 +8,7 @@ from .nodes import (
     prepara_dados_mlp_node,
     cria_modelo_mlp_node,
     treina_mlp_node,
-    avalia_mlp_node,
+    avalia_metricas_mlp_node,
     visualiza_previsoes_mlp_node,
     visualiza_distribuicao_dados_separado,
     visualiza_previsoes_espaco_fases_node,
@@ -56,10 +56,10 @@ def create_pipeline(**kwargs) -> Pipeline:
         ),
         
         node(
-            func=avalia_mlp_node,
+            func=avalia_metricas_mlp_node,
             inputs=["modelo_mlp_treinado", "X_val", "y_val", "X_test", "y_test", "scaler_y"],
             outputs="metricas_mlp",
-            name="node_avalia_mlp",
+            name="node_avalia_metricas_mlp",
         ),
         
         node(

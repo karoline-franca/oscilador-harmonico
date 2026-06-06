@@ -360,7 +360,7 @@ def treina_mlp_node(
     return model, history
 
 
-def avalia_mlp_node(
+def avalia_metricas_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
     y_val: np.ndarray,
