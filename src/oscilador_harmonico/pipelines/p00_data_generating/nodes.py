@@ -45,38 +45,51 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
 
 def gera_frequencias_angulares_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     """
-    Node: Gera frequência angular única (estratificada para compatibilidade).
+    Node: Gera frequências angulares aleatórias estratificadas.
     
     Args:
         parameters: Parâmetros do pipeline.
         
     Returns:
-        DataFrame com frequência angular para o sistema único.
+        DataFrame com frequências angulares por sistema.
     """
     intervals = parameters['intervals']
+    n_sistemas = parameters['simulation']['n_sistemas']
     seed = parameters['seed']
     
     if seed is not None:
         np.random.seed(seed)
     
-    # frequência única definida no arquivo parameters.yml
-    omega = intervals['omega']
+    # distribuição log-uniform (mais amostras em baixas frequências)
+    log_omega_min = np.log10(intervals['omega_min'])
+    log_omega_max = np.log10(intervals['omega_max'])
     
-    # descrição baseada no valor da frequência
-    if omega < 1.0:
-        descricao = "Muito Lento"
-    elif omega < 3.0:
-        descricao = "Lento"
-    elif omega < 6.0:
-        descricao = "Médio"
-    elif omega < 9.0:
-        descricao = "Rápido"
-    else:
-        descricao = "Muito Rápido"
+    log_estratos = np.linspace(log_omega_min, log_omega_max, n_sistemas + 1)
+    
+    omegas = []
+    for i in range(n_sistemas):
+        log_omega = np.random.uniform(log_estratos[i], log_estratos[i+1])
+        omega = 10 ** log_omega
+        omegas.append(omega)
+    
+    np.random.shuffle(omegas)
+    
+    descricoes = []
+    for omega in omegas:
+        if omega < 1.0:
+            descricoes.append("Muito Lento")
+        elif omega < 3.0:
+            descricoes.append("Lento")
+        elif omega < 6.0:
+            descricoes.append("Médio")
+        elif omega < 9.0:
+            descricoes.append("Rápido")
+        else:
+            descricoes.append("Muito Rápido")
     
     df = pd.DataFrame({
-        'frequencia_angular_rads': [omega],
-        'descricao_sistema': [descricao]
+        'frequencia_angular_rads': omegas,
+        'descricao_sistema': descricoes
     })
     
     return df
@@ -109,16 +122,25 @@ def executa_simulacao_rk4_node(
         device=device
     )
     
-    # encontra sistema mais lento (único sistema)
+    # encontra sistema mais lento (menor frequência angular)
     idx_lento = np.argmin(frequencias)
     periodo_lento = oscilador.periodos.cpu().numpy()[idx_lento]
     
-    # calcula t_final
+    # calcula t_final baseado no período mais longo
     t_final_calculado = sim_params['num_periodos'] * periodo_lento
     n_passos = int(np.ceil(t_final_calculado / sim_params['dt']))
     t_final = n_passos * sim_params['dt']
     
-    # executa simulação - retorna apenas o dicionário solução
+    print(f"\n=== SIMULAÇÃO RK4 ===")
+    print(f"  Número de sistemas: {oscilador.n_sistemas}")
+    print(f"  Frequências: {frequencias}")
+    print(f"  Períodos: {oscilador.periodos.cpu().numpy()}")
+    print(f"  Sistema mais lento (Índice {idx_lento}) -> Período = {periodo_lento:.4f} s")
+    print(f"  Tempo final (num_periodos={sim_params['num_periodos']}): {t_final:.4f} s")
+    print(f"  Número de passos: {n_passos}")
+    print(f"  dt = {sim_params['dt']} s")
+    
+    # executa simulação
     solucao = oscilador.resolve_multi_condicoes_sistemas(
         condicoes_iniciais=cond_iniciais_tensor,
         t_final=t_final,
@@ -134,7 +156,9 @@ def executa_simulacao_rk4_node(
         'total_trajetorias': oscilador.n_sistemas * len(condicoes_iniciais),
         'periodo_lento': float(periodo_lento),
         'idx_sistema_lento': int(idx_lento),
-        'data_execucao': datetime.now().isoformat()
+        'data_execucao': datetime.now().isoformat(),
+        'frequencias': frequencias,
+        'periodos': oscilador.periodos.cpu().numpy().tolist()
     }
     
     return solucao, metadados

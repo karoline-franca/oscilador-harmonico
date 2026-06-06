@@ -8,10 +8,10 @@ from plotly.subplots import make_subplots
 from sklearn.metrics import mean_squared_error, r2_score
 
 CORES_PALETA = [
-    '#FF1493', '#00FF00', '#FF4500', '#00BFFF', '#FFD700',
-    '#8B00FF', '#FF6347', '#00FA9A', '#DC143C', '#1E90FF',
-    '#FF8C00', '#32CD32', '#FF00FF', '#00CED1', '#FF69B4',
-    '#7FFF00', '#8A2BE2', '#00FF7F', '#FF2400', '#0000CD',
+    '#FF1493', '#00FF00', '#FF4500', '#00BFFF', '#FF69B4',
+    '#8B00FF', '#FF6347', '#FFD700', '#7FFF00', '#1E90FF',
+    '#FF8C00', '#32CD32', '#FF00FF', '#00CED1', '#00FA9A',
+    '#DC143C', '#8A2BE2', '#00FF7F', '#FF2400', '#0000CD',
 ]
 
 
@@ -329,13 +329,14 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             text=f"{titulo}<br>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
-            x=0.5,
+            x=0.45,
             font=dict(size=16)
         ),
         width=1000,
         height=500,
         showlegend=True,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.5,
             xanchor='left',
@@ -480,7 +481,9 @@ def cria_grafico_distribuicao_dados(
 def cria_grafico_previsoes_espaco_fases(
     y_pos_true, y_vel_true,
     y_pos_pred, y_vel_pred,
-    titulo="Previsões do Modelo no Espaço de Fases"
+    frequencias=None,
+    titulo="Previsões do Modelo no Espaço de Fases",
+    cores_paleta=CORES_PALETA
 ):
     """
     Cria gráfico 2D mostrando as previsões do modelo no espaço de fases.
@@ -490,57 +493,123 @@ def cria_grafico_previsoes_espaco_fases(
         y_vel_true: Velocidades reais
         y_pos_pred: Posições previstas
         y_vel_pred: Velocidades previstas
+        frequencias: Array com as frequências de cada ponto (para colorir por sistema)
         titulo: Título do gráfico
+        cores_paleta: Lista de cores para os diferentes sistemas
         
     Returns:
         Figura Plotly
     """
     fig = go.Figure()
     
-    # previsões do modelo
-    fig.add_trace(go.Scatter(
-        x=y_pos_pred.flatten(),
-        y=y_vel_pred.flatten(),
-        mode='markers',
-        name='MLP',
-        marker=dict(
-            color='#FF4500',
-            size=3,
-            opacity=0.6,
-            symbol='diamond'
-        ),
-        hovertemplate=(
-            f"<b>MLP</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
+    if frequencias is None:
+        # previsões do modelo
+        fig.add_trace(go.Scatter(
+            x=y_pos_pred.flatten(),
+            y=y_vel_pred.flatten(),
+            mode='markers',
+            name='MLP',
+            marker=dict(
+                color='#FF4500',
+                size=3,
+                opacity=0.6,
+                symbol='diamond'
+            ),
+            hovertemplate=(
+                f"<b>MLP</b><br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
 
-    # dados reais
-    fig.add_trace(go.Scatter(
-        x=y_pos_true.flatten(),
-        y=y_vel_true.flatten(),
-        mode='markers',
-        name='Dados Reais',
-        marker=dict(
-            color='#00BFFF',
-            size=3,
-            opacity=0.6,
-            symbol='circle'
-        ),
-        hovertemplate=(
-            f"<b>Dados Reais</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
+        # dados reais
+        fig.add_trace(go.Scatter(
+            x=y_pos_true.flatten(),
+            y=y_vel_true.flatten(),
+            mode='markers',
+            name='Dados de Teste',
+            marker=dict(
+                color='#00BFFF',
+                size=3,
+                opacity=0.6,
+                symbol='circle'
+            ),
+            hovertemplate=(
+                f"<b>Dados de Teste</b><br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
+        rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
+        r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
+        r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+        
+    else:
 
-    rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
-    rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
-    r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
-    r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+        frequencias_unicas = np.unique(frequencias)
+        
+        for i, omega in enumerate(frequencias_unicas):
+            cor_sistema = cores_paleta[i % len(cores_paleta)]
+            mask = np.abs(frequencias - omega) < 1e-6
+            
+            y_pos_true_sistema = y_pos_true[mask].flatten()
+            y_vel_true_sistema = y_vel_true[mask].flatten()
+            y_pos_pred_sistema = y_pos_pred[mask].flatten()
+            y_vel_pred_sistema = y_vel_pred[mask].flatten()
+            
+            rmse_pos_sistema = np.sqrt(mean_squared_error(y_pos_true_sistema, y_pos_pred_sistema))
+            rmse_vel_sistema = np.sqrt(mean_squared_error(y_vel_true_sistema, y_vel_pred_sistema))
+            
+            fig.add_trace(go.Scatter(
+                x=y_pos_pred_sistema,
+                y=y_vel_pred_sistema,
+                mode='markers',
+                name=f'MLP (ω={omega:.2f} rad/s)',
+                marker=dict(
+                    color=cor_sistema,
+                    size=4,
+                    opacity=0.7,
+                    symbol='diamond'
+                ),
+                hovertemplate=(
+                    f"<b>MLP - ω={omega:.2f} rad/s</b><br>" +
+                    f"RMSE Pos: {rmse_pos_sistema:.4f} m<br>" +
+                    f"RMSE Vel: {rmse_vel_sistema:.4f} m/s<br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+            
+            cor_real = cores_paleta[(i + len(cores_paleta)//3) % len(cores_paleta)]
+
+            fig.add_trace(go.Scatter(
+                x=y_pos_true_sistema,
+                y=y_vel_true_sistema,
+                mode='markers',
+                name=f'Dados de Teste (ω={omega:.2f} rad/s)',
+                marker=dict(
+                    color=cor_real,
+                    size=4,
+                    opacity=0.7,
+                    symbol='circle'
+                ),
+                hovertemplate=(
+                    f"<b>Dados de Teste - ω={omega:.2f} rad/s</b><br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+        
+        rmse_pos = float(np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten())))
+        rmse_vel = float(np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten())))
+        r2_pos = float(r2_score(y_pos_true.flatten(), y_pos_pred.flatten()))
+        r2_vel = float(r2_score(y_vel_true.flatten(), y_vel_pred.flatten()))
     
     fig.update_layout(
         title=dict(
@@ -548,7 +617,7 @@ def cria_grafico_previsoes_espaco_fases(
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
-            font=dict(size=14)
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -675,6 +744,7 @@ def cria_grafico_interpolacao_completo(
         width=1400,
         height=900,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.98,
             xanchor='left',
@@ -785,6 +855,7 @@ def cria_grafico_interpolacao_espaco_fases(
         width=1400,
         height=1000,
         legend=dict(
+            title="Legenda",
             x=0.75,
             y=0.98,
             bgcolor='rgba(255, 255, 255, 0.9)',
@@ -914,6 +985,7 @@ def cria_grafico_interpolacao_pontual_mlp(
         height=500,
         showlegend=True,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.5,
             xanchor='left',
@@ -931,7 +1003,9 @@ def cria_grafico_interpolacao_pontual_mlp(
 def cria_grafico_interpolacao_pontual_espaco_fases(
     y_pos_true, y_vel_true,
     y_pos_pred, y_vel_pred,
-    titulo="Interpolação Pontual no Espaço de Fases"
+    frequencias=None,
+    titulo="Interpolação Pontual no Espaço de Fases",
+    cores_paleta=CORES_PALETA
 ):
     """
     Cria gráfico 2D mostrando a interpolação pontual do modelo no espaço de fases.
@@ -941,57 +1015,125 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         y_vel_true: Velocidades reais
         y_pos_pred: Posições previstas
         y_vel_pred: Velocidades previstas
+        frequencias: Array com as frequências de cada ponto (para colorir por sistema)
         titulo: Título do gráfico
+        cores_paleta: Lista de cores para os diferentes sistemas
         
     Returns:
         Figura Plotly
     """
     fig = go.Figure()
     
-    # previsões do modelo
-    fig.add_trace(go.Scatter(
-        x=y_pos_pred.flatten(),
-        y=y_vel_pred.flatten(),
-        mode='markers',
-        name='MLP',
-        marker=dict(
-            color='#FF4500',
-            size=3,
-            opacity=0.6,
-            symbol='diamond'
-        ),
-        hovertemplate=(
-            f"<b>MLP</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
+    if frequencias is None:
+        # previsões do modelo
+        fig.add_trace(go.Scatter(
+            x=y_pos_pred.flatten(),
+            y=y_vel_pred.flatten(),
+            mode='markers',
+            name='MLP',
+            marker=dict(
+                color='#FF4500',
+                size=3,
+                opacity=0.6,
+                symbol='diamond'
+            ),
+            hovertemplate=(
+                f"<b>MLP</b><br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
 
-    # dados reais
-    fig.add_trace(go.Scatter(
-        x=y_pos_true.flatten(),
-        y=y_vel_true.flatten(),
-        mode='markers',
-        name='Solução Analítica',
-        marker=dict(
-            color='#00BFFF',
-            size=3,
-            opacity=0.6,
-            symbol='circle'
-        ),
-        hovertemplate=(
-            f"<b>Solução Analítica</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
+        # dados reais
+        fig.add_trace(go.Scatter(
+            x=y_pos_true.flatten(),
+            y=y_vel_true.flatten(),
+            mode='markers',
+            name='Solução Analítica',
+            marker=dict(
+                color='#00BFFF',
+                size=3,
+                opacity=0.6,
+                symbol='circle'
+            ),
+            hovertemplate=(
+                f"<b>Solução Analítica</b><br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
+        rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
+        r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
+        r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+        
+    else:
 
-    rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
-    rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
-    r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
-    r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+        frequencias_unicas = np.unique(frequencias)
+        
+        for i, omega in enumerate(frequencias_unicas):
+            cor_sistema = cores_paleta[i % len(cores_paleta)]
+            mask = np.abs(frequencias - omega) < 1e-6
+            
+            y_pos_true_sistema = y_pos_true[mask].flatten()
+            y_vel_true_sistema = y_vel_true[mask].flatten()
+            y_pos_pred_sistema = y_pos_pred[mask].flatten()
+            y_vel_pred_sistema = y_vel_pred[mask].flatten()
+            
+            rmse_pos_sistema = np.sqrt(mean_squared_error(y_pos_true_sistema, y_pos_pred_sistema))
+            rmse_vel_sistema = np.sqrt(mean_squared_error(y_vel_true_sistema, y_vel_pred_sistema))
+            
+            # previsões do modelo
+            fig.add_trace(go.Scatter(
+                x=y_pos_pred_sistema,
+                y=y_vel_pred_sistema,
+                mode='markers',
+                name=f'MLP (ω={omega:.2f} rad/s)',
+                marker=dict(
+                    color=cor_sistema,
+                    size=4,
+                    opacity=0.7,
+                    symbol='diamond'
+                ),
+                hovertemplate=(
+                    f"<b>MLP - ω={omega:.2f} rad/s</b><br>" +
+                    f"RMSE Pos: {rmse_pos_sistema:.4f} m<br>" +
+                    f"RMSE Vel: {rmse_vel_sistema:.4f} m/s<br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+            
+            # solução analítica
+            cor_real = cores_paleta[(i + len(cores_paleta)//3) % len(cores_paleta)]
+            
+            fig.add_trace(go.Scatter(
+                x=y_pos_true_sistema,
+                y=y_vel_true_sistema,
+                mode='markers',
+                name=f'Solução Analítica (ω={omega:.2f} rad/s)',
+                marker=dict(
+                    color=cor_real,
+                    size=4,
+                    opacity=0.7,
+                    symbol='circle'
+                ),
+                hovertemplate=(
+                    f"<b>Solução Analítica - ω={omega:.2f} rad/s</b><br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+        
+        rmse_pos = float(np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten())))
+        rmse_vel = float(np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten())))
+        r2_pos = float(r2_score(y_pos_true.flatten(), y_pos_pred.flatten()))
+        r2_vel = float(r2_score(y_vel_true.flatten(), y_vel_pred.flatten()))
     
     fig.update_layout(
         title=dict(
@@ -999,7 +1141,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
-            font=dict(size=14)
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -1171,6 +1313,7 @@ def cria_grafico_interpolacao_pontual_completo(
         width=1400,
         height=900,
         legend=dict(
+            title="Legenda",
             x=1.02,
             y=0.98,
             xanchor='left',
@@ -1364,7 +1507,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
      
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br><sub>Interpolação entre duas trajetórias no espaço de fases</sub>",
+            text=f"{titulo}<br>",
             x=0.5,
             font=dict(size=16, color='white')
         ),

@@ -5,14 +5,15 @@ Definição do pipeline MLP.
 from kedro.pipeline import Pipeline, node
 
 from .nodes import (
+    interpola_trajetorias_avulsas_node,
     prepara_dados_mlp_node,
     cria_modelo_mlp_node,
     treina_mlp_node,
     avalia_mlp_node,
-    visualiza_previsoes_mlp_node,
+    visualiza_previsoes_teste_node,
     visualiza_distribuicao_dados_separado,
-    visualiza_previsoes_espaco_fases_node,
-    interpola_trajetorias_node,
+    visualiza_previsoes_espaco_fases_teste_node,
+    interpola_trajetorias_avulsas_node,
     interpolacoes_pontuais_mlp_node,
     interpola_entre_trajetorias_mlp_node,
 )
@@ -63,24 +64,24 @@ def create_pipeline(**kwargs) -> Pipeline:
         ),
         
         node(
-            func=visualiza_previsoes_mlp_node,
+            func=visualiza_previsoes_teste_node,
             inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_y", "parameters"],
             outputs=None,
-            name="node_visualiza_previsoes_mlp",
+            name="node_visualiza_previsoes_teste",
         ),
 
         node(
-            func=visualiza_previsoes_espaco_fases_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_y", "parameters"],
+            func=visualiza_previsoes_espaco_fases_teste_node,
+            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
             outputs=None,
-            name="node_visualiza_previsoes_espaco_fases",
+            name="node_visualiza_previsoes_espaco_fases_teste",
         ),
 
         node(
-            func=interpola_trajetorias_node,
+            func=interpola_trajetorias_avulsas_node,
             inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
             outputs=None,
-            name="node_interpola_trajetorias",
+            name="node_interpola_trajetorias_avulsas",
         ),
 
         node(
