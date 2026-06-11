@@ -1400,3 +1400,160 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
     )
     
     return fig
+
+
+def cria_grafico_interpolacao_trajetorias_espaco_fases(
+    trajetoria_base_pos,
+    trajetoria_base_vel,
+    novas_trajetorias_lista,
+    casos_info,
+    titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases",
+    cores_paleta=CORES_PALETA
+):
+    """
+    Cria gráfico 2D mostrando a trajetória base e as novas trajetórias geradas a partir de diferentes condições iniciais no espaço de fases.
+    
+    Args:
+        trajetoria_base_pos: Array com as posições da trajetória base
+        trajetoria_base_vel: Array com as velocidades da trajetória base
+        novas_trajetorias_lista: Lista de dicionários contendo posicoes, velocidades, x0, v0, variacao_id
+        casos_info: Dicionário com informações da trajetória base
+        titulo: Título do gráfico
+        cores_paleta: Lista de cores para as novas trajetórias
+        
+    Returns:
+        Figura Plotly
+    """
+    
+    fig = go.Figure()
+    
+    # trajetória base
+    caso_info = casos_info if casos_info else {}
+    fig.add_trace(go.Scatter(
+        x=trajetoria_base_pos,
+        y=trajetoria_base_vel,
+        mode='lines',
+        name=f"Trajetória Base: x₀={caso_info.get('x0_base', 0):.3f} m, v₀={caso_info.get('v0_base', 0):.3f} m/s",
+        line=dict(color='blue', width=3, dash='solid'),
+        hovertemplate=(
+            f"<b>Trajetória Base</b><br>" +
+            f"x₀ = {caso_info.get('x0_base', 0):.3f} m<br>" +
+            f"v₀ = {caso_info.get('v0_base', 0):.3f} m/s<br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # novas trajetórias
+    n_novas = len(novas_trajetorias_lista)
+    if n_novas > 0:
+        indices_cores = np.linspace(0, len(cores_paleta) - 1, n_novas, dtype=int)
+        
+        for i, trajetoria in enumerate(novas_trajetorias_lista):
+            posicoes = trajetoria['posicoes']
+            velocidades = trajetoria['velocidades']
+            x0_novo = trajetoria['x0']
+            v0_novo = trajetoria['v0']
+            variacao_id = trajetoria.get('variacao_id', i)
+            
+            cor = cores_paleta[indices_cores[i] % len(cores_paleta)]
+            
+            # linha da nova trajetória
+            fig.add_trace(go.Scatter(
+                x=posicoes,
+                y=velocidades,
+                mode='lines',
+                name=f"Variação {variacao_id+1}: x₀={x0_novo:.3f} m, v₀={v0_novo:.3f} m/s",
+                line=dict(color=cor, width=2, dash='dash'),
+                opacity=0.7,
+                hovertemplate=(
+                    f"<b>Variação {variacao_id+1}</b><br>" +
+                    f"x₀ = {x0_novo:.3f} m<br>" +
+                    f"v₀ = {v0_novo:.3f} m/s<br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+            
+            # ponto inicial da nova trajetória
+            fig.add_trace(go.Scatter(
+                x=[posicoes[0]],
+                y=[velocidades[0]],
+                mode='markers',
+                marker=dict(
+                    color=cor,
+                    size=8,
+                    symbol='circle',
+                    line=dict(color='white', width=1)
+                ),
+                name=f"Início Variação {variacao_id+1}",
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Início Variação {variacao_id+1}</b><br>" +
+                    f"x₀ = {x0_novo:.3f} m<br>" +
+                    f"v₀ = {v0_novo:.3f} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
+    
+    # ponto inicial da trajetória base
+    fig.add_trace(go.Scatter(
+        x=[trajetoria_base_pos[0]],
+        y=[trajetoria_base_vel[0]],
+        mode='markers',
+        marker=dict(color='blue', size=12, symbol='circle', line=dict(color='white', width=2)),
+        name="Início Trajetória Base",
+        showlegend=False,
+        hovertemplate=f"<b>Início Trajetória Base</b><br>x₀ = {caso_info.get('x0_base', 0):.3f} m<br>v₀ = {caso_info.get('v0_base', 0):.3f} m/s<br><extra></extra>"
+    ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{titulo}<br>",
+            x=0.45,
+            font=dict(size=16, color='white')
+        ),
+        xaxis_title="Posição (m)",
+        yaxis_title="Velocidade (m/s)",
+        width=1400,
+        height=1000,
+        legend=dict(
+            title="Legenda",
+            x=0.95,
+            y=0.80,
+            xanchor='left',
+            yanchor='middle',
+            bgcolor='rgba(255, 255, 255, 0.95)',
+            bordercolor='gray',
+            borderwidth=1,
+            font=dict(color='black', size=10)
+        ),
+        hovermode='closest',
+        plot_bgcolor='black',
+        paper_bgcolor='black',
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        yaxis=dict(
+            showgrid=False,
+            gridcolor='darkgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='white',
+            zerolinewidth=1,
+            title_font_color='white',
+            tickfont_color='white'
+        ),
+        title_font_color='white'
+    )
+    
+    return fig

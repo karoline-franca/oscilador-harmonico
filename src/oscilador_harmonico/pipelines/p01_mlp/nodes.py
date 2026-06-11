@@ -27,6 +27,7 @@ from oscilador_harmonico.utils import (
     cria_grafico_interpolacao_pontual_espaco_fases,
     cria_grafico_interpolacao_pontual_completo,
     cria_grafico_interpolacao_entre_trajetorias_espaco_fases,
+    cria_grafico_interpolacao_trajetorias_espaco_fases,
     CORES_PALETA
 )
 
@@ -722,6 +723,10 @@ def interpolacoes_pontuais_mlp_node(
     
     intervals = parameters.get('intervals', {})
     omega_fixo = intervals.get('omega', 5.0)
+    seed = parameters.get('seed', 42)
+    
+    # fixa a semente para reprodutibilidade
+    np.random.seed(seed)
     
     print("\n=== INTERPOLAÇÃO PONTUAL ===")
     print("  A interpolação é feita variando o tempo para uma mesma trajetória (x0, v0 constantes)")
@@ -736,7 +741,16 @@ def interpolacoes_pontuais_mlp_node(
     trajetorias_unicas = trajetorias_unicas
     
     print(f"\n  Trajetórias únicas encontradas: {len(trajetorias_unicas)}")
-        
+    
+    # seleciona aleatoriamente no máximo 5 trajetórias
+    num_trajetorias = min(5, len(trajetorias_unicas))
+    if num_trajetorias < len(trajetorias_unicas):
+        trajetorias_selecionadas = trajetorias_unicas.sample(n=num_trajetorias, random_state=seed)
+        print(f"  Selecionadas aleatoriamente {num_trajetorias} trajetórias para interpolação")
+    else:
+        trajetorias_selecionadas = trajetorias_unicas
+        print(f"  Usando todas as {num_trajetorias} trajetórias disponíveis")
+    
     todas_previsoes = []
     todos_reais_interpolados = []
     
@@ -749,9 +763,11 @@ def interpolacoes_pontuais_mlp_node(
     casos_info_lista = []
     dados_interpolados = []
     
-    for idx, row in trajetorias_unicas.iterrows():
+    for idx, row in trajetorias_selecionadas.iterrows():
         x0 = row['x0']
         v0 = row['v0']
+        
+        print(f"\n  Processando trajetória {idx}: x0={x0:.3f}, v0={v0:.3f}")
         
         # filtra os pontos originais desta trajetória específica (usando dados originais)
         mask = (np.abs(X_test_original[:, 0] - x0) < 1e-6) & \
@@ -778,6 +794,9 @@ def interpolacoes_pontuais_mlp_node(
         # gera pontos de tempo interpolados (mais finos que os originais)
         num_pontos_interpolados = 100
         tempos_interpolados = np.linspace(t_min, t_max, num_pontos_interpolados)
+        
+        print(f"    Intervalo temporal: [{t_min:.3f}, {t_max:.3f}] s")
+        print(f"    Pontos interpolados: {len(tempos_interpolados)}")
         
         # para validação, obtém os valores reais nesses tempos (via solução analítica do OHS)
         # usando a frequência angular fixa do sistema
@@ -869,7 +888,6 @@ def interpolacoes_pontuais_mlp_node(
     )
     
     fig1.write_html(grafico_interpolacao_pontual)
-    print(f"\n  Gráfico de interpolação pontual (Real vs Previsto) salvo em {grafico_interpolacao_pontual}")
     
     # ============================================
     # GRÁFICO 2: Espaço de Fases
@@ -889,7 +907,6 @@ def interpolacoes_pontuais_mlp_node(
     )
     
     fig2.write_html(grafico_interpolacao_pontual_espaco_fases)
-    print(f"  Gráfico de interpolação pontual (Espaço de Fases) salvo em {grafico_interpolacao_pontual_espaco_fases}")
     
     # ============================================
     # GRÁFICO 3: Posição e Velocidade vs Tempo
@@ -906,7 +923,6 @@ def interpolacoes_pontuais_mlp_node(
     )
     
     fig3.write_html(grafico_interpolacao_pontual_temporal)
-    print(f"  Gráfico de interpolação pontual (Posição/Velocidade vs Tempo) salvo em {grafico_interpolacao_pontual_temporal}")
     
     fig1.show()
     fig2.show()
@@ -919,11 +935,11 @@ def interpolacoes_pontuais_mlp_node(
     df_interpolado.attrs['r2_posicao'] = r2_pos
     df_interpolado.attrs['r2_velocidade'] = r2_vel
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
-    df_interpolado.attrs['num_trajetorias'] = len(trajetorias_unicas)
+    df_interpolado.attrs['num_trajetorias'] = len(trajetorias_selecionadas)
     df_interpolado.attrs['pontos_por_trajetoria'] = 100
     df_interpolado.attrs['omega_fixo'] = omega_fixo
     
-    print(f"\n  Base de dados com interpolação temporal dentro de cada trajetória gerada com {len(df_interpolado)} registros")
+    print(f"\n  Base de dados com interpolação temporal dentro de {len(trajetorias_selecionadas)} trajetórias gerada com {len(df_interpolado)} registros")
     
     return df_interpolado
 
@@ -1241,6 +1257,316 @@ def interpola_entre_trajetorias_mlp_node(
     
     grafico_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases_detalhado.html"
     fig4.write_html(grafico_entre_trajetorias_espaco_fases)
+    
+    fig4.show()
+
+    return df_interpolado
+
+
+def interpola_trajetorias_mlp_node(
+    model: nn.Module,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    scaler_X: StandardScaler,
+    scaler_y: StandardScaler,
+    parameters: Dict[str, Any]
+) -> pd.DataFrame:
+    """
+    Node: Usa o modelo treinado para gerar diferentes condições iniciais a partir de uma trajetória base.
+    A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e v0.
+    Não mistura dados de treino/validação/teste pois usa apenas dados de teste.
+    """
+    
+    exp_name = parameters.get('exp_name', 'default_exp')
+    data_version = parameters.get('data_version', 'base_01')
+    
+    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_interpolacao_trajetorias = f"{output_dir}/interpolacoes_trajetorias_real_previsto_mlp.html"
+    grafico_interpolacao_trajetorias_espaco_fases = f"{output_dir}/interpolacao_trajetorias_espaco_fases.html"
+    grafico_interpolacao_trajetorias_temporal = f"{output_dir}/interpolacao_trajetorias_v_x_vs_t.html"
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    model.eval()
+    
+    intervals = parameters.get('intervals', {})
+    omega_fixo = intervals.get('omega', 5.0)
+    
+    x0_min = intervals.get('x0_min', -0.5)
+    x0_max = intervals.get('x0_max', 0.5)
+    v0_min = intervals.get('v0_min', -1.0)
+    v0_max = intervals.get('v0_max', 1.0)
+    
+    seed = parameters.get('seed', 42)
+    np.random.seed(seed)
+    
+    print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DE TRAJETÓRIA BASE ===")
+    print(f"  Frequência: {omega_fixo} rad/s")
+    print("  Gerando novas condições iniciais variando x0 e v0 dentro dos limites")
+    
+    X_test_original = scaler_X.inverse_transform(X_test)
+    y_test_original = scaler_y.inverse_transform(y_test)
+    
+    X_test_df = pd.DataFrame(X_test_original, columns=['x0', 'v0', 'tempo'])
+    
+    # identifica trajetórias únicas (x0, v0 constantes) usando dados originais
+    trajetorias_unicas = X_test_df.groupby(['x0', 'v0']).size().reset_index()
+    trajetorias_unicas = trajetorias_unicas
+    
+    print(f"\n  Trajetórias únicas encontradas: {len(trajetorias_unicas)}")
+
+    # seleciona uma trajetória base aleatoriamente
+    idx_base = np.random.choice(len(trajetorias_unicas))
+    traj_base = trajetorias_unicas.iloc[idx_base]
+    x0_base, v0_base = traj_base['x0'], traj_base['v0']
+    amplitude_base = np.sqrt(x0_base**2 + (v0_base / omega_fixo)**2)
+    
+    print(f"\n  Trajetória Base Selecionada:")
+    print(f"    x0 = {x0_base:.3f} m")
+    print(f"    v0 = {v0_base:.3f} m/s")
+    print(f"    Amplitude = {amplitude_base:.3f} m")
+    
+    # obtém os tempos únicos da trajetória base
+    mask_base = (np.abs(X_test_original[:, 0] - x0_base) < 1e-6) & \
+                (np.abs(X_test_original[:, 1] - v0_base) < 1e-6)
+    tempos_base = X_test_original[mask_base, 2]
+    tempos_unicos = np.sort(np.unique(tempos_base))
+    
+    print(f"\n  Intervalo temporal da trajetória base:")
+    print(f"    t_min = {tempos_unicos.min():.3f} s")
+    print(f"    t_max = {tempos_unicos.max():.3f} s")
+    print(f"    {len(tempos_unicos)} instantes de tempo")
+    
+    num_variacoes = 5
+    variacoes = []
+    
+    # opção 1: geração aleatória dentro dos limites
+    np.random.seed(seed)
+    x0_variacoes = np.random.uniform(x0_min, x0_max, num_variacoes)
+    v0_variacoes = np.random.uniform(v0_min, v0_max, num_variacoes)
+    
+    # opção 2: geração em grid
+    # x0_variacoes = np.linspace(x0_min, x0_max, num_variacoes)
+    # v0_variacoes = np.linspace(v0_min, v0_max, num_variacoes)
+    
+    print(f"\n  Gerando {num_variacoes} novas condições iniciais:")
+    for i in range(num_variacoes):
+        variacoes.append({
+            'x0': x0_variacoes[i],
+            'v0': v0_variacoes[i],
+            'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
+        })
+        print(f"    Variação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}, amplitude={variacoes[-1]['amplitude']:.3f}")
+    
+    todas_previsoes = []
+    todos_reais_interpolados = []
+    
+    tempos_lista = []
+    posicoes_previstas_lista = []
+    velocidades_previstas_lista = []
+    posicoes_reais_lista = []
+    velocidades_reais_lista = []
+    casos_info_lista = []
+    dados_interpolados = []
+    
+    # para cada nova condição inicial, faz a previsão
+    for var_idx, var in enumerate(variacoes):
+        x0_novo = var['x0']
+        v0_novo = var['v0']
+        
+        print(f"\n  Processando variação {var_idx+1}/{num_variacoes}:")
+        print(f"    x0={x0_novo:.3f}, v0={v0_novo:.3f}")
+        
+        # prepara entrada para o modelo (apenas x0, v0, tempo)
+        X_novo = np.zeros((len(tempos_unicos), 3))
+        X_novo[:, 0] = x0_novo
+        X_novo[:, 1] = v0_novo
+        X_novo[:, 2] = tempos_unicos
+        
+        # normaliza e faz previsão
+        X_novo_scaled = scaler_X.transform(X_novo)
+        X_tensor = torch.tensor(X_novo_scaled, dtype=torch.float32).to(device)
+        
+        with torch.no_grad():
+            pred_scaled = model(X_tensor).cpu().numpy()
+        
+        pred = scaler_y.inverse_transform(pred_scaled)
+        
+        # solução analítica para validação
+        pos_analitico = x0_novo * np.cos(omega_fixo * tempos_unicos) + \
+                        (v0_novo / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
+        vel_analitico = -x0_novo * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
+                        v0_novo * np.cos(omega_fixo * tempos_unicos)
+        
+        todas_previsoes.append(pred)
+        todos_reais_interpolados.append(np.column_stack([pos_analitico, vel_analitico]))
+        
+        tempos_lista.append(tempos_unicos)
+        posicoes_previstas_lista.append(pred[:, 0])
+        velocidades_previstas_lista.append(pred[:, 1])
+        posicoes_reais_lista.append(pos_analitico)
+        velocidades_reais_lista.append(vel_analitico)
+        
+        cor = CORES_PALETA[var_idx % len(CORES_PALETA)]
+        
+        casos_info_lista.append({
+            'x0': x0_novo,
+            'v0': v0_novo,
+            'omega': omega_fixo,
+            'cor': cor,
+            'variation_id': var_idx
+        })
+        
+        for k in range(len(tempos_unicos)):
+            dados_interpolados.append({
+                'variacao_id': var_idx,
+                'x0': x0_novo,
+                'v0': v0_novo,
+                'omega': omega_fixo,
+                'tempo': tempos_unicos[k],
+                'posicao_analitica': pos_analitico[k],
+                'velocidade_analitica': vel_analitico[k],
+                'posicao_prevista_mlp': pred[k, 0],
+                'velocidade_prevista_mlp': pred[k, 1],
+                'erro_posicao': pred[k, 0] - pos_analitico[k],
+                'erro_velocidade': pred[k, 1] - vel_analitico[k],
+                'erro_abs_posicao': abs(pred[k, 0] - pos_analitico[k]),
+                'erro_abs_velocidade': abs(pred[k, 1] - vel_analitico[k]),
+                'erro_rel_posicao_pct': (abs(pred[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
+                'erro_rel_velocidade_pct': (abs(pred[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
+            })
+    
+    if len(todas_previsoes) == 0:
+        print("  ERRO: Nenhuma previsão realizada")
+        return pd.DataFrame()
+    
+    predictions_all = np.vstack(todas_previsoes)
+    y_true_all = np.vstack(todos_reais_interpolados)
+    
+    rmse_pos = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
+    rmse_vel = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
+    r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
+    r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
+    
+    print(f"\n  Total de pontos previstos: {len(predictions_all)}")
+    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
+    print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
+    print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
+    print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
+    
+    # ============================================
+    # GRÁFICO 1: Real vs Previsto
+    # ============================================
+    
+    fig1 = cria_grafico_interpolacao_pontual_mlp(
+        predictions=predictions_all,
+        y_true=y_true_all,
+        titulo="Novas Condições Iniciais: Solução Analítica vs MLP"
+    )
+    
+    fig1.write_html(grafico_interpolacao_trajetorias)
+    
+    # ============================================
+    # GRÁFICO 2: Espaço de Fases
+    # ============================================
+    
+    y_pos_true = y_true_all[:, 0].reshape(-1, 1)
+    y_vel_true = y_true_all[:, 1].reshape(-1, 1)
+    y_pos_pred = predictions_all[:, 0].reshape(-1, 1)
+    y_vel_pred = predictions_all[:, 1].reshape(-1, 1)
+    
+    fig2 = cria_grafico_interpolacao_pontual_espaco_fases(
+        y_pos_true=y_pos_true,
+        y_vel_true=y_vel_true,
+        y_pos_pred=y_pos_pred,
+        y_vel_pred=y_vel_pred,
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases"
+    )
+    
+    fig2.write_html(grafico_interpolacao_trajetorias_espaco_fases)
+    
+    # ============================================
+    # GRÁFICO 3: Posição e Velocidade vs Tempo
+    # ============================================
+    
+    fig3 = cria_grafico_interpolacao_pontual_completo(
+        tempos_lista=tempos_lista,
+        posicoes_previstas_lista=posicoes_previstas_lista,
+        velocidades_previstas_lista=velocidades_previstas_lista,
+        posicoes_reais_lista=posicoes_reais_lista,
+        velocidades_reais_lista=velocidades_reais_lista,
+        casos_info=casos_info_lista,
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+    )
+    
+    fig3.write_html(grafico_interpolacao_trajetorias_temporal)
+    
+    fig1.show()
+    fig2.show()
+    fig3.show()
+    
+    df_interpolado = pd.DataFrame(dados_interpolados)
+    
+    df_interpolado.attrs['rmse_posicao'] = rmse_pos
+    df_interpolado.attrs['rmse_velocidade'] = rmse_vel
+    df_interpolado.attrs['r2_posicao'] = r2_pos
+    df_interpolado.attrs['r2_velocidade'] = r2_vel
+    df_interpolado.attrs['total_pontos'] = len(predictions_all)
+    df_interpolado.attrs['num_variacoes'] = num_variacoes
+    df_interpolado.attrs['num_tempos'] = len(tempos_unicos)
+    df_interpolado.attrs['omega_fixo'] = omega_fixo
+    
+    print(f"\n  Base de dados com novas condições iniciais gerada com {len(df_interpolado)} registros")
+    print(f"  - Trajetória Base: (x0={x0_base:.3f}, v0={v0_base:.3f}) - Amplitude: {amplitude_base:.3f}")
+    print(f"  - {num_variacoes} novas condições iniciais geradas")
+    print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
+
+    # ========================================================================
+    # GRÁFICO 4: Trajetória Base e Novas Condições Iniciais no Espaço de Fases
+    # ========================================================================
+    
+    mask_base = (np.abs(X_test_original[:, 0] - x0_base) < 1e-6) & \
+                (np.abs(X_test_original[:, 1] - v0_base) < 1e-6)
+    idx_base_traj = np.argsort(X_test_original[mask_base, 2])
+    traj_base_pos = y_test_original[mask_base, 0][idx_base_traj]
+    traj_base_vel = y_test_original[mask_base, 1][idx_base_traj]
+    
+    novas_trajetorias_para_grafico = []
+    
+    for var_idx in range(num_variacoes):
+        mask_var = df_interpolado['variacao_id'] == var_idx
+        dados_var = df_interpolado[mask_var].sort_values('tempo')
+        
+        if len(dados_var) > 0:
+            x0_var = dados_var['x0'].iloc[0]
+            v0_var = dados_var['v0'].iloc[0]
+            
+            novas_trajetorias_para_grafico.append({
+                'variacao_id': var_idx,
+                'posicoes': dados_var['posicao_prevista_mlp'].values,
+                'velocidades': dados_var['velocidade_prevista_mlp'].values,
+                'x0': x0_var,
+                'v0': v0_var
+            })
+    
+    casos_info_grafico = {
+        'x0_base': x0_base,
+        'v0_base': v0_base
+    }
+    
+    fig4 = cria_grafico_interpolacao_trajetorias_espaco_fases(
+        trajetoria_base_pos=traj_base_pos,
+        trajetoria_base_vel=traj_base_vel,
+        novas_trajetorias_lista=novas_trajetorias_para_grafico,
+        casos_info=casos_info_grafico,
+        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases"
+    )
+    
+    grafico_novas_trajetorias = f"{output_dir}/trajetoria_base_vs_novas_condicoes.html"
+    fig4.write_html(grafico_novas_trajetorias)
+    print(f"  Gráfico da trajetória base vs novas condições iniciais salvo em {grafico_novas_trajetorias}")
     
     fig4.show()
 
