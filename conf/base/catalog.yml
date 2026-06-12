@@ -120,9 +120,9 @@ base_interpolada_pontual:
     sep: ';'
     encoding: 'latin-1'
 
-base_interpolada_trajetorias:
+base_interpolada_entre_trajetorias:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_trajetorias.csv
+  filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_entre_trajetorias.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'

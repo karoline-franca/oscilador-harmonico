@@ -1,8 +1,8 @@
 simulation:
-  n_sistemas: 2
-  n_condicoes_iniciais: 500
+  n_sistemas: 200
+  n_condicoes_iniciais: 200
   num_periodos: 1
-  dt: 0.01
+  dt: 0.1
 
 intervals:
   omega_min: 1.0        

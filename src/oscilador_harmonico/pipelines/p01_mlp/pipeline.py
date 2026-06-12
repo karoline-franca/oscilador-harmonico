@@ -6,6 +6,7 @@ from kedro.pipeline import Pipeline, node
 
 from .nodes import (
     interpola_trajetorias_avulsas_node,
+    interpola_trajetorias_mlp_node,
     prepara_dados_mlp_node,
     cria_modelo_mlp_node,
     treina_mlp_node,
@@ -94,8 +95,15 @@ def create_pipeline(**kwargs) -> Pipeline:
         node(
             func=interpola_entre_trajetorias_mlp_node,
             inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
-            outputs="base_interpolada_trajetorias",
+            outputs="base_interpolada_entre_trajetorias",
             name="node_interpola_entre_trajetorias_mlp",
+        ),
+
+        node(
+            func=interpola_trajetorias_mlp_node,
+            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
+            outputs="base_interpolada_trajetorias",
+            name="node_interpola_trajetorias_mlp",
         ),
 
     ])
