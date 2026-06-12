@@ -586,8 +586,8 @@ def interpola_trajetorias_avulsas_node(
             "nome": "Caso 1",
             "x0": 0.3,
             "v0": 0.0,
-            "omega": omega_fixo,
-            "t_final": 2 * np.pi / omega_fixo,
+            "omega": 5.1,
+            "t_final": 2 * np.pi / 5.1,
             "cor": CORES_PALETA[0]
         },
         {
