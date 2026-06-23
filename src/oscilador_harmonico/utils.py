@@ -1431,7 +1431,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         y=trajetoria1_vel,
         mode='lines',
         name=f"Trajetória 1: x₀={caso_info.get('x0_1', 0):.3f} m, v₀={caso_info.get('v0_1', 0):.3f} m/s",
-        line=dict(color='blue', width=3, dash='solid'),
+        line=dict(color='blue', width=3, dash='dash'),
         hovertemplate=(
             f"<b>Trajetória 1 </b><br>" +
             f"x₀ = {caso_info.get('x0_1', 0):.3f} m<br>" +
@@ -1448,7 +1448,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         y=trajetoria2_vel,
         mode='lines',
         name=f"Trajetória 2: x₀={caso_info.get('x0_2', 0):.3f} m, v₀={caso_info.get('v0_2', 0):.3f} m/s",
-        line=dict(color='red', width=3, dash='solid'),
+        line=dict(color='red', width=3, dash='dash'),
         hovertemplate=(
             f"<b>Trajetória 2 </b><br>" +
             f"x₀ = {caso_info.get('x0_2', 0):.3f} m<br>" +
@@ -1478,7 +1478,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
                 y=velocidades,
                 mode='lines',
                 name=f"Trajetória Interpolada: x₀={x0_interp:.3f} m, v₀={v0_interp:.3f} m/s",
-                line=dict(color=cor, width=3, dash='dash'),
+                line=dict(color=cor, width=3, dash='solid'),
                 opacity=0.7,
                 hovertemplate=(
                     f"<b>Interpolação </b><br>" +
@@ -1613,7 +1613,7 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
         y=trajetoria_base_vel,
         mode='lines',
         name=f"Trajetória Base: x₀={caso_info.get('x0_base', 0):.3f} m, v₀={caso_info.get('v0_base', 0):.3f} m/s",
-        line=dict(color='blue', width=3, dash='solid'),
+        line=dict(color='blue', width=3, dash='dash'),
         hovertemplate=(
             f"<b>Trajetória Base</b><br>" +
             f"x₀ = {caso_info.get('x0_base', 0):.3f} m<br>" +
@@ -1643,7 +1643,7 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
                 y=velocidades,
                 mode='lines',
                 name=f"Trajetória Interpolada: x₀={x0_novo:.3f} m, v₀={v0_novo:.3f} m/s",
-                line=dict(color=cor, width=2, dash='dash'),
+                line=dict(color=cor, width=2, dash='solid'),
                 opacity=0.7,
                 hovertemplate=(
                     f"<b>Trajetória Interpolada</b><br>" +
