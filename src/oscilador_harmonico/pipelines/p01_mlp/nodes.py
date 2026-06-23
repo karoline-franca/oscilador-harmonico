@@ -561,7 +561,7 @@ def visualiza_previsoes_espaco_fases_teste_node(
     r2_pos = r2_score(y_pos_true, y_pos_pred)
     r2_vel = r2_score(y_vel_true, y_vel_pred)
     
-    print(f"\n  Métricas Globais (apenas para os {len(trajetorias_selecionadas)} sistemas selecionados):")
+    print(f"\n  Métricas globais (apenas para os {len(trajetorias_selecionadas)} sistemas selecionados):")
     print(f"    RMSE Posição: {rmse_pos:.6f} m")
     print(f"    RMSE Velocidade: {rmse_vel:.6f} m/s")
     print(f"    R² Posição: {r2_pos:.4f}")
@@ -768,7 +768,7 @@ def interpolacoes_pontuais_mlp_node(
     trajetorias_unicas = X_test_df.groupby(['x0', 'v0', 'omega']).size().reset_index()
     trajetorias_unicas = trajetorias_unicas.sample(n=2, random_state=42)
     
-    print(f"\n  Trajetórias únicas filtradas{len(trajetorias_unicas)}")
+    print(f"\n  Trajetórias únicas filtradas: {len(trajetorias_unicas)}")
         
     todas_previsoes = []
     todos_reais_interpolados = []
