@@ -8,10 +8,10 @@ from plotly.subplots import make_subplots
 from sklearn.metrics import mean_squared_error, r2_score
 
 CORES_PALETA = [
-    '#FF1493', '#00FF00', '#FF4500', '#00BFFF', '#FFD700',
-    '#8B00FF', '#FF6347', '#00FA9A', '#DC143C', '#1E90FF',
-    '#FF8C00', '#32CD32', '#FF00FF', '#00CED1', '#FF69B4',
-    '#7FFF00', '#8A2BE2', '#00FF7F', '#FF2400', '#0000CD',
+    '#C41E3A','#2E7D32','#1565C0','#E65100','#6A1B9A',
+    '#00695C','#AD1457','#F57F17','#37474F','#D84315',
+    '#1B5E20','#0D47A1','#4A148C','#BF360C','#1A237E',
+    '#004D40','#880E4F','#4E342E','#263238','#B71C1C'
 ]
 
 
@@ -241,7 +241,142 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     return fig
 
 
-# gráfico saída x,v
+def cria_grafico_distribuicao_dados(
+    y_pos_train, y_vel_train,
+    y_pos_val, y_vel_val,
+    y_pos_test, y_vel_test,
+    titulo="Distribuição dos Dados no Espaço de Fases"
+):
+    """
+    Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
+    
+    Args:
+        y_pos_train: Posições de treino
+        y_vel_train: Velocidades de treino
+        y_pos_val: Posições de validação
+        y_vel_val: Velocidades de validação
+        y_pos_test: Posições de teste
+        y_vel_test: Velocidades de teste
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = go.Figure()
+    
+    # treino
+    fig.add_trace(go.Scatter(
+        x=y_pos_train.flatten(),
+        y=y_vel_train.flatten(),
+        mode='markers',
+        name='Dados de Treino (70%)',
+        marker=dict(
+            color='#2E7D32',
+            size=3,
+            opacity=0.5,
+            symbol='circle'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Treino</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # validação
+    fig.add_trace(go.Scatter(
+        x=y_pos_val.flatten(),
+        y=y_vel_val.flatten(),
+        mode='markers',
+        name='Dados de Validação (20%)',
+        marker=dict(
+            color='#4A148C',
+            size=3,
+            opacity=0.5,
+            symbol='square'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Validação</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # teste
+    fig.add_trace(go.Scatter(
+        x=y_pos_test.flatten(),
+        y=y_vel_test.flatten(),
+        mode='markers',
+        name='Dados de Teste (10%)',
+        marker=dict(
+            color='#B71C1C',
+            size=3,
+            opacity=0.5,
+            symbol='diamond'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Teste</b><br>" +
+            f"Posição: %{{x:.3f}} m<br>" +
+            f"Velocidade: %{{y:.3f}} m/s<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    n_train = len(y_pos_train)
+    n_val = len(y_pos_val)
+    n_test = len(y_pos_test)
+    total = n_train + n_val + n_test
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
+                 f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
+                 f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
+                 f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
+            x=0.50,
+            y=0.95,
+            font=dict(size=20)
+        ),
+        xaxis_title="Posição (m)",
+        yaxis_title="Velocidade (m/s)",
+        width=1400,
+        height=1000,
+        legend=dict(
+            title="Legenda",
+            x=0.85,
+            y=0.98,
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1,
+            font=dict(size=16)
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        margin=dict(t=150),
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='black',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        ),
+        yaxis=dict(
+            showgrid=False,
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='black',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
+    )
+    
+    return fig
 
 def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Modelo MLP"):
     """
@@ -309,14 +444,24 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             title_text=f'Valor Real {nomes[i]} ({unidades[i]})',
             row=1, col=i+1,
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         )
         
         fig.update_yaxes(
             title_text=f'Valor Previsto {nomes[i]} ({unidades[i]})',
             row=1, col=i+1,
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         )
     
     rmse_pos = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
@@ -326,14 +471,16 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>" +
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.45,
+            y=0.97,
             font=dict(size=16)
         ),
-        width=1000,
-        height=500,
+        width=1400,
+        height=700,
         showlegend=True,
         legend=dict(
             title="Legenda",
@@ -343,141 +490,16 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=16)
         ),
-        hovermode='closest'
+        hovermode='closest',
+        plot_bgcolor='white',
+        margin=dict(t=150)
     )
     
     return fig
 
-def cria_grafico_distribuicao_dados(
-    y_pos_train, y_vel_train,
-    y_pos_val, y_vel_val,
-    y_pos_test, y_vel_test,
-    titulo="Distribuição dos Dados no Espaço de Fases"
-):
-    """
-    Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
-    
-    Args:
-        y_pos_train: Posições de treino
-        y_vel_train: Velocidades de treino
-        y_pos_val: Posições de validação
-        y_vel_val: Velocidades de validação
-        y_pos_test: Posições de teste
-        y_vel_test: Velocidades de teste
-        titulo: Título do gráfico
-        
-    Returns:
-        Figura Plotly
-    """
-    fig = go.Figure()
-    
-    # treino
-    fig.add_trace(go.Scatter(
-        x=y_pos_train.flatten(),
-        y=y_vel_train.flatten(),
-        mode='markers',
-        name='Dados de Treino (70%)',
-        marker=dict(
-            color='#00FF00',
-            size=3,
-            opacity=0.5,
-            symbol='circle'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Treino</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    # validação
-    fig.add_trace(go.Scatter(
-        x=y_pos_val.flatten(),
-        y=y_vel_val.flatten(),
-        mode='markers',
-        name='Dados de Validação (20%)',
-        marker=dict(
-            color='#8A2BE2',
-            size=3,
-            opacity=0.5,
-            symbol='square'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Validação</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    # teste
-    fig.add_trace(go.Scatter(
-        x=y_pos_test.flatten(),
-        y=y_vel_test.flatten(),
-        mode='markers',
-        name='Dados de Teste (10%)',
-        marker=dict(
-            color='#FF2400',
-            size=3,
-            opacity=0.5,
-            symbol='diamond'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Teste</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    n_train = len(y_pos_train)
-    n_val = len(y_pos_val)
-    n_test = len(y_pos_test)
-    total = n_train + n_val + n_test
-    
-    fig.update_layout(
-        title=dict(
-            text=f"{titulo}<br>" +
-                 f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
-                 f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
-                 f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
-            x=0.45,
-            font=dict(size=16)
-        ),
-        xaxis_title="Posição (m)",
-        yaxis_title="Velocidade (m/s)",
-        width=1400,
-        height=1000,
-        legend=dict(
-            title="Legenda",
-            x=0.75,
-            y=0.98,
-            bgcolor='rgba(255, 255, 255, 0.9)',
-            bordercolor='black',
-            borderwidth=1
-        ),
-        hovermode='closest',
-        plot_bgcolor='black',
-        xaxis=dict(
-            showgrid=False,
-            gridcolor='lightgray',
-            zeroline=True,
-            zerolinecolor='white',
-            zerolinewidth=1
-        ),
-        yaxis=dict(
-            showgrid=False,
-            gridcolor='lightgray',
-            zeroline=True,
-            zerolinecolor='white',
-            zerolinewidth=1
-        )
-    )
-    
-    return fig
 
 def cria_grafico_previsoes_espaco_fases(
     y_pos_true, y_vel_true,
@@ -506,7 +528,7 @@ def cria_grafico_previsoes_espaco_fases(
         mode='markers',
         name='MLP',
         marker=dict(
-            color='#FF4500',
+            color='#BF360C',
             size=3,
             opacity=0.6,
             symbol='diamond'
@@ -526,7 +548,7 @@ def cria_grafico_previsoes_espaco_fases(
         mode='markers',
         name='Dados de Teste',
         marker=dict(
-            color='#00BFFF',
+            color='#1A237E',
             size=3,
             opacity=0.6,
             symbol='circle'
@@ -546,10 +568,12 @@ def cria_grafico_previsoes_espaco_fases(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>" +
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
+            y=0.95,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -559,33 +583,34 @@ def cria_grafico_previsoes_espaco_fases(
         legend=dict(
             title="Legenda",
             x=0.95,
-            y=0.80,
+            y=0.95,
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -668,8 +693,8 @@ def cria_grafico_interpolacao_completo(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
-            x=0.5,
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            x=0.35,
             font=dict(size=16)
         ),
         xaxis_title="Tempo (s)",
@@ -678,36 +703,36 @@ def cria_grafico_interpolacao_completo(
         height=900,
         legend=dict(
             title="Legenda",
-            x=1.02,
-            y=0.98,
+            x=1.05,
+            y=0.75,
             xanchor='left',
             yanchor='top',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
         xaxis=dict(
             showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -779,8 +804,8 @@ def cria_grafico_interpolacao_espaco_fases(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
-            x=0.5,
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            x=0.35,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -789,34 +814,34 @@ def cria_grafico_interpolacao_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.95,
-            y=0.85,
+            x=1.05,
+            y=0.75,
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -890,14 +915,24 @@ def cria_grafico_interpolacao_pontual_mlp(
             title_text=f'Valor Real {nomes[i]} ({unidades[i]})',
             row=1, col=i+1,
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         )
         
         fig.update_yaxes(
             title_text=f'Valor Previsto {nomes[i]} ({unidades[i]})',
             row=1, col=i+1,
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='lightgray',
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         )
     
     rmse_pos = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
@@ -907,14 +942,16 @@ def cria_grafico_interpolacao_pontual_mlp(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>" +
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.45,
+            y=0.95,
             font=dict(size=16)
         ),
-        width=1000,
-        height=500,
+        width=1400,
+        height=700,
         showlegend=True,
         legend=dict(
             title="Legenda",
@@ -924,9 +961,13 @@ def cria_grafico_interpolacao_pontual_mlp(
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
-        hovermode='closest'
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='closest',
+        margin=dict(t=150)
     )
     
     return fig
@@ -959,7 +1000,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         mode='markers',
         name='MLP',
         marker=dict(
-            color='#FF4500',
+            color='#BF360C',
             size=3,
             opacity=0.6,
             symbol='diamond'
@@ -979,7 +1020,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         mode='markers',
         name='Solução Analítica',
         marker=dict(
-            color='#00BFFF',
+            color='#1A237E',
             size=3,
             opacity=0.6,
             symbol='circle'
@@ -999,7 +1040,8 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>" +
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
                  f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
             x=0.5,
@@ -1012,35 +1054,36 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         legend=dict(
             title="Legenda",
             x=0.95,
-            y=0.80,
+            y=0.85,
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -1168,7 +1211,7 @@ def cria_grafico_interpolacao_pontual_completo(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
             x=0.5,
             font=dict(size=16)
         ),
@@ -1179,35 +1222,36 @@ def cria_grafico_interpolacao_pontual_completo(
         legend=dict(
             title="Legenda",
             x=1.02,
-            y=0.98,
+            y=0.75,
             xanchor='left',
             yanchor='top',
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
-            borderwidth=1
+            borderwidth=1,
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -1354,9 +1398,10 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
      
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
             x=0.45,
-            font=dict(size=16, color='white')
+            y=0.95,
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -1364,39 +1409,38 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.95,
-            y=0.80,
+            x=1.00,
+            y=0.75,
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
-            font=dict(color='black', size=10)
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig
@@ -1511,9 +1555,10 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
     
     fig.update_layout(
         title=dict(
-            text=f"{titulo}<br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
             x=0.45,
-            font=dict(size=16, color='white')
+            y=0.95,
+            font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
         yaxis_title="Velocidade (m/s)",
@@ -1521,39 +1566,38 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.95,
-            y=0.80,
+            x=1.00,
+            y=0.75,
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
-            font=dict(color='black', size=10)
+            font=dict(size=14)
         ),
         hovermode='closest',
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
             gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='white',
+            zerolinecolor='darkgray',
             zerolinewidth=1,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
     )
     
     return fig

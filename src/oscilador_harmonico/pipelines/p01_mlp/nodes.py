@@ -233,7 +233,6 @@ def visualiza_distribuicao_dados_separado(
     )
     
     fig.write_html(grafico_distribuicao_dados)
-    print(f"Gráfico de distribuição salvo em {grafico_distribuicao_dados}")
     
     fig.show()
     
@@ -1030,7 +1029,6 @@ def interpola_entre_trajetorias_mlp_node(
     print(f"  Instantes de tempo únicos entre {tempos_unicos.min():.3f} s e {tempos_unicos.max():.3f} s")
     
     alphas = np.linspace(0, 1, 3)
-    print(f"  Fatores de interpolação: {alphas}")
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -1046,9 +1044,6 @@ def interpola_entre_trajetorias_mlp_node(
     for alpha in alphas:
         x0_interp = (1 - alpha) * x0_1 + alpha * x0_2
         v0_interp = (1 - alpha) * v0_1 + alpha * v0_2
-        amplitude_interp = np.sqrt(x0_interp**2 + (v0_interp / omega_fixo)**2)
-        if alpha == 0.5:
-            print(f"  Amplitude interpolada para α={alpha:.1f}: {amplitude_interp:.3f}")
         
         X_interpolado = np.zeros((len(tempos_unicos), 3))
         X_interpolado[:, 0] = x0_interp
@@ -1193,8 +1188,8 @@ def interpola_entre_trajetorias_mlp_node(
     df_interpolado.attrs['omega_fixo'] = omega_fixo
     
     print(f"\n  Base de dados com interpolação entre trajetórias gerada com {len(df_interpolado)} registros")
-    print(f"  - Trajetória 1: (x0={x0_1:.3f}, v0={v0_1:.3f}) - Amplitude: {np.sqrt(x0_1**2 + (v0_1/omega_fixo)**2):.3f}")
-    print(f"  - Trajetória 2: (x0={x0_2:.3f}, v0={v0_2:.3f}) - Amplitude: {np.sqrt(x0_2**2 + (v0_2/omega_fixo)**2):.3f}")
+    print(f"  - Trajetória 1: (x0={x0_1:.3f}, v0={v0_1:.3f})")
+    print(f"  - Trajetória 2: (x0={x0_2:.3f}, v0={v0_2:.3f})")
     print(f"  - {len(alphas)} níveis de interpolação")
     print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
 
@@ -1326,7 +1321,6 @@ def interpola_trajetorias_mlp_node(
     print(f"\n  Trajetória Base Selecionada:")
     print(f"    x0 = {x0_base:.3f} m")
     print(f"    v0 = {v0_base:.3f} m/s")
-    print(f"    Amplitude = {amplitude_base:.3f} m")
     
     # obtém os tempos únicos da trajetória base
     mask_base = (np.abs(X_test_original[:, 0] - x0_base) < 1e-6) & \
@@ -1358,7 +1352,7 @@ def interpola_trajetorias_mlp_node(
             'v0': v0_variacoes[i],
             'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
         })
-        print(f"    Variação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}, amplitude={variacoes[-1]['amplitude']:.3f}")
+        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}")
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -1375,9 +1369,6 @@ def interpola_trajetorias_mlp_node(
     for var_idx, var in enumerate(variacoes):
         x0_novo = var['x0']
         v0_novo = var['v0']
-        
-        print(f"\n  Processando variação {var_idx+1}/{num_variacoes}:")
-        print(f"    x0={x0_novo:.3f}, v0={v0_novo:.3f}")
         
         # prepara entrada para o modelo (apenas x0, v0, tempo)
         X_novo = np.zeros((len(tempos_unicos), 3))
@@ -1519,7 +1510,7 @@ def interpola_trajetorias_mlp_node(
     df_interpolado.attrs['omega_fixo'] = omega_fixo
     
     print(f"\n  Base de dados com novas condições iniciais gerada com {len(df_interpolado)} registros")
-    print(f"  - Trajetória Base: (x0={x0_base:.3f}, v0={v0_base:.3f}) - Amplitude: {amplitude_base:.3f}")
+    print(f"  - Trajetória Base: (x0={x0_base:.3f}, v0={v0_base:.3f})")
     print(f"  - {num_variacoes} novas condições iniciais geradas")
     print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
 
@@ -1566,7 +1557,6 @@ def interpola_trajetorias_mlp_node(
     
     grafico_novas_trajetorias = f"{output_dir}/trajetoria_base_vs_novas_condicoes.html"
     fig4.write_html(grafico_novas_trajetorias)
-    print(f"  Gráfico da trajetória base vs novas condições iniciais salvo em {grafico_novas_trajetorias}")
     
     fig4.show()
 
