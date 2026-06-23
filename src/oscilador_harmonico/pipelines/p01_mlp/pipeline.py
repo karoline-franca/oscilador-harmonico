@@ -86,21 +86,21 @@ def create_pipeline(**kwargs) -> Pipeline:
 
         node(
             func=interpolacoes_pontuais_mlp_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
+            inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
             outputs="base_interpolada_pontual",
             name="node_interpolacoes_pontuais_mlp",
         ),
 
         node(
             func=interpola_entre_trajetorias_mlp_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
+            inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
             outputs="base_interpolada_entre_trajetorias",
             name="node_interpola_entre_trajetorias_mlp",
         ),
 
         node(
             func=interpola_trajetorias_mlp_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_X", "scaler_y", "parameters"],
+            inputs=["modelo_mlp_treinado", "scaler_X", "scaler_y", "parameters"],
             outputs="base_interpolada_trajetorias",
             name="node_interpola_trajetorias_mlp",
         ),

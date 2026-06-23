@@ -682,22 +682,18 @@ def interpola_trajetorias_avulsas_node(
 
 def interpolacoes_pontuais_mlp_node(
     model: nn.Module,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
     parameters: Dict[str, Any]
 ) -> pd.DataFrame:
     """
-    Node: Usa o modelo treinado para fazer interpolação entre pontos dos dados de teste.
-    Faz previsões pontuais independentes em pontos que não estão no conjunto original de treino/validação.
+    Node: Usa o modelo treinado para fazer interpolação entre pontos de dados gerados aleatoriamente.
+    Faz previsões pontuais independentes em pontos que não estão no conjunto original de treino/validação/teste.
     Nota: A interpolação é feita dentro da mesma trajetória, variando apenas o tempo.
     A frequência angular é constante.
     
     Args:
         model: Modelo MLP treinado
-        X_test: Dados de teste NORMALIZADOS
-        y_test: Dados de teste NORMALIZADOS
         scaler_X: Scaler das features de entrada
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
@@ -730,25 +726,48 @@ def interpolacoes_pontuais_mlp_node(
     print("\n=== INTERPOLAÇÃO PONTUAL ===")
     print("  A interpolação é feita variando o tempo para uma mesma trajetória (x0, v0 constantes)")
     
-    X_test_original = scaler_X.inverse_transform(X_test)
-    y_test_original = scaler_y.inverse_transform(y_test)
+    # ============================================
+    # GERAÇÃO DE DADOS ALEATÓRIOS
+    # ============================================
     
-    X_test_df = pd.DataFrame(X_test_original, columns=['x0', 'v0', 'tempo'])
+    # limites dos intervalos dos parâmetros
+    x0_min = intervals.get('x0_min', -0.5)
+    x0_max = intervals.get('x0_max', 0.5)
+    v0_min = intervals.get('v0_min', -1.0)
+    v0_max = intervals.get('v0_max', 1.0)
     
-    # identifica trajetórias únicas (x0, v0 constantes) usando dados originais
-    trajetorias_unicas = X_test_df.groupby(['x0', 'v0']).size().reset_index()
-    trajetorias_unicas = trajetorias_unicas
+    # número de trajetórias a serem geradas
+    num_trajetorias = 2
     
-    print(f"\n  Trajetórias únicas encontradas: {len(trajetorias_unicas)}")
+    print(f"\n  Gerando {num_trajetorias} trajetórias aleatórias:")
+    print(f"    x0 no intervalo [{x0_min:.3f}, {x0_max:.3f}]")
+    print(f"    v0 no intervalo [{v0_min:.3f}, {v0_max:.3f}]")
     
-    # seleciona aleatoriamente no máximo 5 trajetórias
-    num_trajetorias = min(5, len(trajetorias_unicas))
-    if num_trajetorias < len(trajetorias_unicas):
-        trajetorias_selecionadas = trajetorias_unicas.sample(n=num_trajetorias, random_state=seed)
-        print(f"  Selecionadas aleatoriamente {num_trajetorias} trajetórias para interpolação")
-    else:
-        trajetorias_selecionadas = trajetorias_unicas
-        print(f"  Usando todas as {num_trajetorias} trajetórias disponíveis")
+    # gera condições iniciais aleatórias
+    x0_values = np.random.uniform(x0_min, x0_max, num_trajetorias)
+    v0_values = np.random.uniform(v0_min, v0_max, num_trajetorias)
+    
+    # calcula o período do sistema
+    T = 2 * np.pi / omega_fixo
+    
+    # define o tempo máximo como 1 período (como no treinamento)
+    tempo_maximo = T  # 1 período completo
+    
+    # número de pontos por trajetória
+    num_pontos_por_trajetoria = 1000
+    
+    # calcula o passo temporal
+    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+    
+    print(f"\n  Configuração da interpolação:")
+    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+    print(f"    Período: {T:.3f} s")
+    print(f"    Tempo máximo: {tempo_maximo:.3f} s")
+    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
+    
+    # gera os tempos interpolados
+    tempos_interpolados = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -762,49 +781,19 @@ def interpolacoes_pontuais_mlp_node(
     casos_info_lista = []
     dados_interpolados = []
     
-    for idx, row in trajetorias_selecionadas.iterrows():
-        x0 = row['x0']
-        v0 = row['v0']
+    for idx in range(num_trajetorias):
+        x0 = x0_values[idx]
+        v0 = v0_values[idx]
         
         print(f"\n  Processando trajetória {idx}: x0={x0:.3f}, v0={v0:.3f}")
         
-        # filtra os pontos originais desta trajetória específica (usando dados originais)
-        mask = (np.abs(X_test_original[:, 0] - x0) < 1e-6) & \
-               (np.abs(X_test_original[:, 1] - v0) < 1e-6)
-        
-        tempos_originais = X_test_original[mask, 2]
-        pos_originais = y_test_original[mask, 0]
-        vel_originais = y_test_original[mask, 1]
-        
-        if len(tempos_originais) < 5:
-            print(f"    Poucos pontos ({len(tempos_originais)} < 5). Pulando...")
-            continue
-        
-        # ordena por tempo
-        idx_sort = np.argsort(tempos_originais)
-        tempos_originais = tempos_originais[idx_sort]
-        pos_originais = pos_originais[idx_sort]
-        vel_originais = vel_originais[idx_sort]
-        
-        # cria tempos interpolados entre os pontos originais da mesma trajetória
-        t_min = tempos_originais.min()
-        t_max = tempos_originais.max()
-        
-        # gera pontos de tempo interpolados (mais finos que os originais)
-        num_pontos_interpolados = 100
-        tempos_interpolados = np.linspace(t_min, t_max, num_pontos_interpolados)
-        
-        print(f"    Intervalo temporal: [{t_min:.3f}, {t_max:.3f}] s")
-        print(f"    Pontos interpolados: {len(tempos_interpolados)}")
-        
-        # para validação, obtém os valores reais nesses tempos (via solução analítica do OHS)
-        # usando a frequência angular fixa do sistema
+        # solução analítica para validação
         pos_reais_interpolados = x0 * np.cos(omega_fixo * tempos_interpolados) + \
                                  (v0 / omega_fixo) * np.sin(omega_fixo * tempos_interpolados)
         vel_reais_interpolados = -x0 * omega_fixo * np.sin(omega_fixo * tempos_interpolados) + \
                                  v0 * np.cos(omega_fixo * tempos_interpolados)
         
-        # prepara entrada para o modelo (apenas x0, v0, tempo)
+        # prepara entrada para o modelo (x0, v0, tempo)
         X_interpolado = np.zeros((len(tempos_interpolados), 3))
         X_interpolado[:, 0] = x0
         X_interpolado[:, 1] = v0
@@ -830,7 +819,6 @@ def interpolacoes_pontuais_mlp_node(
         posicoes_reais_lista.append(pos_reais_interpolados)
         velocidades_reais_lista.append(vel_reais_interpolados)
         
-        # escolhe uma cor da paleta baseada no índice
         cor = CORES_PALETA[idx % len(CORES_PALETA)]
         
         casos_info_lista.append({
@@ -840,7 +828,6 @@ def interpolacoes_pontuais_mlp_node(
             'cor': cor
         })
         
-        # registros para o DataFrame interpolado
         for k in range(len(tempos_interpolados)):
             dados_interpolados.append({
                 'id_trajetoria': f"x0_{x0:.3f}_v0_{v0:.3f}",
@@ -883,7 +870,7 @@ def interpolacoes_pontuais_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação Pontual: Solução Analítica vs MLP - Dados de Teste (Por Trajetória)"
+        titulo="Interpolação Pontual: Solução Analítica vs MLP - Dados Gerados Aleatoriamente (Por Trajetória)"
     )
     
     fig1.write_html(grafico_interpolacao_pontual)
@@ -902,7 +889,7 @@ def interpolacoes_pontuais_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Espaço de Fases (Por Trajetória)"
+        titulo="Interpolação Pontual: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
     )
     
     fig2.write_html(grafico_interpolacao_pontual_espaco_fases)
@@ -918,7 +905,7 @@ def interpolacoes_pontuais_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Por Trajetória)"
+        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
     )
     
     fig3.write_html(grafico_interpolacao_pontual_temporal)
@@ -934,19 +921,24 @@ def interpolacoes_pontuais_mlp_node(
     df_interpolado.attrs['r2_posicao'] = r2_pos
     df_interpolado.attrs['r2_velocidade'] = r2_vel
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
-    df_interpolado.attrs['num_trajetorias'] = len(trajetorias_selecionadas)
-    df_interpolado.attrs['pontos_por_trajetoria'] = 100
+    df_interpolado.attrs['num_trajetorias'] = num_trajetorias
+    df_interpolado.attrs['pontos_por_trajetoria'] = num_pontos_por_trajetoria
     df_interpolado.attrs['omega_fixo'] = omega_fixo
+    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
+    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
+    df_interpolado.attrs['x0_min'] = x0_min
+    df_interpolado.attrs['x0_max'] = x0_max
+    df_interpolado.attrs['v0_min'] = v0_min
+    df_interpolado.attrs['v0_max'] = v0_max
     
-    print(f"\n  Base de dados com interpolação temporal dentro de {len(trajetorias_selecionadas)} trajetórias gerada com {len(df_interpolado)} registros")
+    print(f"\n  Base de dados com interpolação temporal dentro de {num_trajetorias} trajetórias gerada com {len(df_interpolado)} registros")
+    print(f"  Tempo máximo: {tempo_maximo:.3f} s, Passo temporal: {dt_interpolacao:.6f} s")
     
     return df_interpolado
 
 
 def interpola_entre_trajetorias_mlp_node(
     model: nn.Module,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
     parameters: Dict[str, Any]
@@ -954,7 +946,7 @@ def interpola_entre_trajetorias_mlp_node(
     """
     Node: Usa o modelo treinado para fazer interpolação entre trajetórias.
     Para cada instante de tempo, interpola entre duas trajetórias diferentes (variando x0 e v0).
-    Não mistura dados de treino/validação/teste pois usa apenas dados de teste.
+    Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -981,53 +973,68 @@ def interpola_entre_trajetorias_mlp_node(
     print(f"  Frequência: {omega_fixo} rad/s")
     print("  Para cada instante de tempo, interpola entre duas trajetórias diferentes")
     
-    X_test_original = scaler_X.inverse_transform(X_test)
-    y_test_original = scaler_y.inverse_transform(y_test)
+    # ============================================
+    # GERAÇÃO DE DADOS ALEATÓRIOS
+    # ============================================
     
-    X_test_df = pd.DataFrame(X_test_original, columns=['x0', 'v0', 'tempo'])
+    # limites dos intervalos dos parâmetros
+    x0_min = intervals.get('x0_min', -0.5)
+    x0_max = intervals.get('x0_max', 0.5)
+    v0_min = intervals.get('v0_min', -1.0)
+    v0_max = intervals.get('v0_max', 1.0)
     
-    # identifica trajetórias únicas (x0, v0 constantes) usando dados originais
-    trajetorias_unicas = X_test_df.groupby(['x0', 'v0']).size().reset_index()
-    trajetorias_unicas = trajetorias_unicas
+    # calcula o período do sistema
+    T = 2 * np.pi / omega_fixo
     
-    print(f"\n  Trajetórias únicas encontradas: {len(trajetorias_unicas)}")
+    # define o tempo máximo como 1 período (como no treinamento)
+    tempo_maximo = T  # 1 período completo
     
-    if len(trajetorias_unicas) < 2:
-        print("  ERRO: Precisamos de pelo menos 2 trajetórias para interpolação")
-        return pd.DataFrame()
+    # número de pontos por trajetória
+    num_pontos_por_trajetoria = 1000
     
-    # ============================================================
-    # TRAJETÓRIAS QUE DELIMITAM UM INTERVALO
-    # ============================================================
-    # calcula a "energia" ou "amplitude" para cada trajetória
-    # amplitude máxima sqrt(x0^2 + (v0/ω)^2)
-    trajetorias_unicas['amplitude'] = np.sqrt(
-        trajetorias_unicas['x0']**2 + (trajetorias_unicas['v0'] / omega_fixo)**2
-    )
+    # calcula o passo temporal
+    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
     
-    trajetorias_unicas = trajetorias_unicas.sort_values('amplitude').reset_index(drop=True)
+    print(f"\n  Configuração da interpolação:")
+    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+    print(f"    Período: {T:.3f} s")
+    print(f"    Tempo máximo: {tempo_maximo:.3f} s")
+    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
     
-    # seleciona uma trajetória com amplitude pequena e outra com amplitude grande
-    n_traj = len(trajetorias_unicas)
-    # idx_pequena = 0  # menor amplitude
-    # idx_grande = n_traj - 1  # maior amplitude
+    # gera os tempos interpolados
+    tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
     
-    # aleatório mas diferentes em amplitude
-    idx_pequena = np.random.choice(n_traj // 2)  # primeira metade (amplitudes menores)
-    idx_grande = np.random.choice(range(n_traj // 2, n_traj))  # segunda metade (amplitudes maiores)
+    # gera 2 trajetórias aleatórias com amplitudes diferentes
+    num_trajetorias = 2
     
-    traj1 = trajetorias_unicas.iloc[idx_pequena]
-    traj2 = trajetorias_unicas.iloc[idx_grande]
+    print(f"\n  Gerando {num_trajetorias} trajetórias aleatórias:")
+    print(f"    x0 no intervalo [{x0_min:.3f}, {x0_max:.3f}]")
+    print(f"    v0 no intervalo [{v0_min:.3f}, {v0_max:.3f}]")
     
-    x0_1, v0_1 = traj1['x0'], traj1['v0']
-    x0_2, v0_2 = traj2['x0'], traj2['v0']
+    # gera uma trajetória com amplitude pequena e outra com amplitude grande
+    # para garantir que sejam diferentes, geramos várias e selecionamos as extremas
+    x0_candidates = np.random.uniform(x0_min, x0_max, 100)
+    v0_candidates = np.random.uniform(v0_min, v0_max, 100)
     
-    print(f"\n  Trajetória 1 (menor amplitude - {traj1['amplitude']:.3f}): x0={x0_1:.3f}, v0={v0_1:.3f}")
-    print(f"  Trajetória 2 (maior amplitude - {traj2['amplitude']:.3f}): x0={x0_2:.3f}, v0={v0_2:.3f}")
+    amplitudes = np.sqrt(x0_candidates**2 + (v0_candidates / omega_fixo)**2)
     
-    tempos_unicos = np.sort(np.unique(X_test_original[:, 2]))
-    print(f"  Instantes de tempo únicos entre {tempos_unicos.min():.3f} s e {tempos_unicos.max():.3f} s")
+    # trajetória de menor amplitude
+    idx_pequena = np.argmin(amplitudes)
+    x0_1 = x0_candidates[idx_pequena]
+    v0_1 = v0_candidates[idx_pequena]
+    amp_1 = amplitudes[idx_pequena]
     
+    # trajetória de maior amplitude
+    idx_grande = np.argmax(amplitudes)
+    x0_2 = x0_candidates[idx_grande]
+    v0_2 = v0_candidates[idx_grande]
+    amp_2 = amplitudes[idx_grande]
+    
+    print(f"\n  Trajetória 1 (menor amplitude - {amp_1:.3f}): x0={x0_1:.3f}, v0={v0_1:.3f}")
+    print(f"  Trajetória 2 (maior amplitude - {amp_2:.3f}): x0={x0_2:.3f}, v0={v0_2:.3f}")
+    
+    # define os níveis de interpolação
     alphas = np.linspace(0, 1, 3)
     
     todas_previsoes = []
@@ -1131,7 +1138,7 @@ def interpola_entre_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação entre Trajetórias: Solução Analítica vs MLP"
+        titulo="Interpolação entre Trajetórias: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
     )
     
     fig1.write_html(grafico_interpolacao_entre_trajetorias)
@@ -1150,7 +1157,7 @@ def interpola_entre_trajetorias_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Espaço de Fases"
+        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
     )
     
     fig2.write_html(grafico_interpolacao_entre_trajetorias_espaco_fases)
@@ -1166,7 +1173,7 @@ def interpola_entre_trajetorias_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
     )
     
     fig3.write_html(grafico_interpolacao_entre_trajetorias_temporal)
@@ -1186,30 +1193,34 @@ def interpola_entre_trajetorias_mlp_node(
     df_interpolado.attrs['num_alpha'] = len(alphas)
     df_interpolado.attrs['num_tempos'] = len(tempos_unicos)
     df_interpolado.attrs['omega_fixo'] = omega_fixo
+    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
+    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
+    df_interpolado.attrs['x0_min'] = x0_min
+    df_interpolado.attrs['x0_max'] = x0_max
+    df_interpolado.attrs['v0_min'] = v0_min
+    df_interpolado.attrs['v0_max'] = v0_max
     
     print(f"\n  Base de dados com interpolação entre trajetórias gerada com {len(df_interpolado)} registros")
-    print(f"  - Trajetória 1: (x0={x0_1:.3f}, v0={v0_1:.3f})")
-    print(f"  - Trajetória 2: (x0={x0_2:.3f}, v0={v0_2:.3f})")
+    print(f"  - Trajetória 1: (x0={x0_1:.3f}, v0={v0_1:.3f}) - Amplitude: {amp_1:.3f}")
+    print(f"  - Trajetória 2: (x0={x0_2:.3f}, v0={v0_2:.3f}) - Amplitude: {amp_2:.3f}")
     print(f"  - {len(alphas)} níveis de interpolação")
     print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
+    print(f"  - Tempo máximo: {tempo_maximo:.3f} s, Passo temporal: {dt_interpolacao:.6f} s")
 
     # ========================================================================
     # GRÁFICO 4: Trajetórias Originais e Interpoladas no Espaço de Fases
     # ========================================================================
     
-    # trajetória 1
-    mask_traj1 = (np.abs(X_test_original[:, 0] - x0_1) < 1e-6) & \
-                 (np.abs(X_test_original[:, 1] - v0_1) < 1e-6)
-    idx_traj1 = np.argsort(X_test_original[mask_traj1, 2])
-    traj1_pos = y_test_original[mask_traj1, 0][idx_traj1]
-    traj1_vel = y_test_original[mask_traj1, 1][idx_traj1]
+    # gera as trajetórias originais analiticamente para o gráfico
+    pos_traj1 = x0_1 * np.cos(omega_fixo * tempos_unicos) + \
+                (v0_1 / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
+    vel_traj1 = -x0_1 * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
+                v0_1 * np.cos(omega_fixo * tempos_unicos)
     
-    # trajetória 2
-    mask_traj2 = (np.abs(X_test_original[:, 0] - x0_2) < 1e-6) & \
-                 (np.abs(X_test_original[:, 1] - v0_2) < 1e-6)
-    idx_traj2 = np.argsort(X_test_original[mask_traj2, 2])
-    traj2_pos = y_test_original[mask_traj2, 0][idx_traj2]
-    traj2_vel = y_test_original[mask_traj2, 1][idx_traj2]
+    pos_traj2 = x0_2 * np.cos(omega_fixo * tempos_unicos) + \
+                (v0_2 / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
+    vel_traj2 = -x0_2 * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
+                v0_2 * np.cos(omega_fixo * tempos_unicos)
     
     # interpolações
     interpolacoes_para_grafico = []
@@ -1241,13 +1252,13 @@ def interpola_entre_trajetorias_mlp_node(
     }]
     
     fig4 = cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
-        trajetoria1_pos=traj1_pos,
-        trajetoria1_vel=traj1_vel,
-        trajetoria2_pos=traj2_pos,
-        trajetoria2_vel=traj2_vel,
+        trajetoria1_pos=pos_traj1,
+        trajetoria1_vel=vel_traj1,
+        trajetoria2_pos=pos_traj2,
+        trajetoria2_vel=vel_traj2,
         interpolacoes_lista=interpolacoes_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Interpolação entre Trajetórias no Espaço de Fases"
+        titulo="Interpolação entre Trajetórias no Espaço de Fases - Dados Gerados Aleatoriamente"
     )
     
     grafico_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases_detalhado.html"
@@ -1260,8 +1271,6 @@ def interpola_entre_trajetorias_mlp_node(
 
 def interpola_trajetorias_mlp_node(
     model: nn.Module,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
     parameters: Dict[str, Any]
@@ -1269,7 +1278,7 @@ def interpola_trajetorias_mlp_node(
     """
     Node: Usa o modelo treinado para gerar diferentes condições iniciais a partir de uma trajetória base.
     A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e v0.
-    Não mistura dados de treino/validação/teste pois usa apenas dados de teste.
+    Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -1301,32 +1310,41 @@ def interpola_trajetorias_mlp_node(
     print(f"  Frequência: {omega_fixo} rad/s")
     print("  Gerando novas condições iniciais variando x0 e v0 dentro dos limites")
     
-    X_test_original = scaler_X.inverse_transform(X_test)
-    y_test_original = scaler_y.inverse_transform(y_test)
+    # ============================================
+    # GERAÇÃO DE DADOS ALEATÓRIOS
+    # ============================================
     
-    X_test_df = pd.DataFrame(X_test_original, columns=['x0', 'v0', 'tempo'])
+    # calcula o período do sistema
+    T = 2 * np.pi / omega_fixo
     
-    # identifica trajetórias únicas (x0, v0 constantes) usando dados originais
-    trajetorias_unicas = X_test_df.groupby(['x0', 'v0']).size().reset_index()
-    trajetorias_unicas = trajetorias_unicas
+    # define o tempo máximo como 1 período (como no treinamento)
+    tempo_maximo = T  # 1 período completo
     
-    print(f"\n  Trajetórias únicas encontradas: {len(trajetorias_unicas)}")
-
-    # seleciona uma trajetória base aleatoriamente
-    idx_base = np.random.choice(len(trajetorias_unicas))
-    traj_base = trajetorias_unicas.iloc[idx_base]
-    x0_base, v0_base = traj_base['x0'], traj_base['v0']
+    # número de pontos por trajetória
+    num_pontos_por_trajetoria = 1000
+    
+    # calcula o passo temporal
+    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+    
+    print(f"\n  Configuração da interpolação:")
+    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+    print(f"    Período: {T:.3f} s")
+    print(f"    Tempo máximo: {tempo_maximo:.3f} s")
+    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
+    
+    # gera os tempos únicos
+    tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+    
+    # gera uma trajetória base aleatória
+    x0_base = np.random.uniform(x0_min, x0_max)
+    v0_base = np.random.uniform(v0_min, v0_max)
     amplitude_base = np.sqrt(x0_base**2 + (v0_base / omega_fixo)**2)
     
     print(f"\n  Trajetória Base Selecionada:")
     print(f"    x0 = {x0_base:.3f} m")
     print(f"    v0 = {v0_base:.3f} m/s")
-    
-    # obtém os tempos únicos da trajetória base
-    mask_base = (np.abs(X_test_original[:, 0] - x0_base) < 1e-6) & \
-                (np.abs(X_test_original[:, 1] - v0_base) < 1e-6)
-    tempos_base = X_test_original[mask_base, 2]
-    tempos_unicos = np.sort(np.unique(tempos_base))
+    print(f"    Amplitude = {amplitude_base:.3f} m")
     
     print(f"\n  Intervalo temporal da trajetória base:")
     print(f"    t_min = {tempos_unicos.min():.3f} s")
@@ -1352,7 +1370,7 @@ def interpola_trajetorias_mlp_node(
             'v0': v0_variacoes[i],
             'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
         })
-        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}")
+        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}, amplitude={variacoes[-1]['amplitude']:.3f}")
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -1454,7 +1472,7 @@ def interpola_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Novas Condições Iniciais: Solução Analítica vs MLP"
+        titulo="Novas Condições Iniciais: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
     )
     
     fig1.write_html(grafico_interpolacao_trajetorias)
@@ -1473,7 +1491,7 @@ def interpola_trajetorias_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases"
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
     )
     
     fig2.write_html(grafico_interpolacao_trajetorias_espaco_fases)
@@ -1489,7 +1507,7 @@ def interpola_trajetorias_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
     )
     
     fig3.write_html(grafico_interpolacao_trajetorias_temporal)
@@ -1508,21 +1526,28 @@ def interpola_trajetorias_mlp_node(
     df_interpolado.attrs['num_variacoes'] = num_variacoes
     df_interpolado.attrs['num_tempos'] = len(tempos_unicos)
     df_interpolado.attrs['omega_fixo'] = omega_fixo
+    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
+    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
+    df_interpolado.attrs['x0_min'] = x0_min
+    df_interpolado.attrs['x0_max'] = x0_max
+    df_interpolado.attrs['v0_min'] = v0_min
+    df_interpolado.attrs['v0_max'] = v0_max
     
     print(f"\n  Base de dados com novas condições iniciais gerada com {len(df_interpolado)} registros")
     print(f"  - Trajetória Base: (x0={x0_base:.3f}, v0={v0_base:.3f})")
     print(f"  - {num_variacoes} novas condições iniciais geradas")
     print(f"  - {len(tempos_unicos)} instantes de tempo por trajetória")
+    print(f"  - Tempo máximo: {tempo_maximo:.3f} s, Passo temporal: {dt_interpolacao:.6f} s")
 
     # ========================================================================
     # GRÁFICO 4: Trajetória Base e Novas Condições Iniciais no Espaço de Fases
     # ========================================================================
     
-    mask_base = (np.abs(X_test_original[:, 0] - x0_base) < 1e-6) & \
-                (np.abs(X_test_original[:, 1] - v0_base) < 1e-6)
-    idx_base_traj = np.argsort(X_test_original[mask_base, 2])
-    traj_base_pos = y_test_original[mask_base, 0][idx_base_traj]
-    traj_base_vel = y_test_original[mask_base, 1][idx_base_traj]
+    # gera a trajetória base analiticamente
+    pos_base = x0_base * np.cos(omega_fixo * tempos_unicos) + \
+               (v0_base / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
+    vel_base = -x0_base * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
+               v0_base * np.cos(omega_fixo * tempos_unicos)
     
     novas_trajetorias_para_grafico = []
     
@@ -1548,11 +1573,11 @@ def interpola_trajetorias_mlp_node(
     }
     
     fig4 = cria_grafico_interpolacao_trajetorias_espaco_fases(
-        trajetoria_base_pos=traj_base_pos,
-        trajetoria_base_vel=traj_base_vel,
+        trajetoria_base_pos=pos_base,
+        trajetoria_base_vel=vel_base,
         novas_trajetorias_lista=novas_trajetorias_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases"
+        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases - Dados Gerados Aleatoriamente"
     )
     
     grafico_novas_trajetorias = f"{output_dir}/trajetoria_base_vs_novas_condicoes.html"
