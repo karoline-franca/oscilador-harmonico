@@ -989,7 +989,6 @@ def interpola_entre_trajetorias_mlp_node(
     print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
     print(f"    Período: {T:.3f} s")
     print(f"    Passo temporal: {dt_interpolacao:.6f} s")
-    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
     
     # gera os tempos interpolados
     tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
@@ -1011,8 +1010,8 @@ def interpola_entre_trajetorias_mlp_node(
     x0_2 = x0_candidates[idx_grande]
     v0_2 = v0_candidates[idx_grande]
     
-    print(f"\n  Trajetória 1: x0={x0_1:.3f}, v0={v0_1:.3f}")
-    print(f"  Trajetória 2: x0={x0_2:.3f}, v0={v0_2:.3f}")
+    print(f"\n  Trajetória 1: x0={x0_1:.3f} m, v0={v0_1:.3f} m/s")
+    print(f"  Trajetória 2: x0={x0_2:.3f} m, v0={v0_2:.3f} m/s")
     
     # define os níveis de interpolação
     alphas = np.linspace(0, 1, 3)
@@ -1310,15 +1309,11 @@ def interpola_trajetorias_mlp_node(
     # gera uma trajetória base aleatória
     x0_base = np.random.uniform(x0_min, x0_max)
     v0_base = np.random.uniform(v0_min, v0_max)
-    amplitude_base = np.sqrt(x0_base**2 + (v0_base / omega_fixo)**2)
     
     print(f"\n  Trajetória Base Selecionada:")
     print(f"    x0 = {x0_base:.3f} m")
     print(f"    v0 = {v0_base:.3f} m/s")
-    
-    print(f"\n  Intervalo temporal da trajetória base:")
-    print(f"    t_min = {tempos_unicos.min():.3f} s")
-    print(f"    t_max = {tempos_unicos.max():.3f} s")
+    print(f"    Período: {tempos_unicos.max():.3f} s")
     print(f"    {len(tempos_unicos)} instantes de tempo")
     
     num_variacoes = 5
@@ -1328,11 +1323,7 @@ def interpola_trajetorias_mlp_node(
     np.random.seed(seed)
     x0_variacoes = np.random.uniform(x0_min, x0_max, num_variacoes)
     v0_variacoes = np.random.uniform(v0_min, v0_max, num_variacoes)
-    
-    # opção 2: geração em grid
-    # x0_variacoes = np.linspace(x0_min, x0_max, num_variacoes)
-    # v0_variacoes = np.linspace(v0_min, v0_max, num_variacoes)
-    
+        
     print(f"\n  Gerando {num_variacoes} novas condições iniciais:")
     for i in range(num_variacoes):
         variacoes.append({
@@ -1340,7 +1331,7 @@ def interpola_trajetorias_mlp_node(
             'v0': v0_variacoes[i],
             'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
         })
-        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f}, v0={v0_variacoes[i]:.3f}")
+        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f} m, v0={v0_variacoes[i]:.3f} m/s")
     
     todas_previsoes = []
     todos_reais_interpolados = []
