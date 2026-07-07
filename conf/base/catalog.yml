@@ -109,6 +109,18 @@ metricas_mlp:
   type: json.JSONDataset
   filepath: data/08_reporting/${runtime_params:data_version,default_v1}/metricas_mlp.json
 
+# ============================================================
+# DADOS DE INTERPOLAÇÃO E REFERÊNCIA TEMPORAL
+# ============================================================
+
+tempos_referencia:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/tempos_referencia.pkl
+
+num_timesteps:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/num_timesteps.pkl
+
 base_interpolada_pontual:
   type: pandas.CSVDataset
   filepath: data/08_reporting/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/base_interpolada_pontual.csv

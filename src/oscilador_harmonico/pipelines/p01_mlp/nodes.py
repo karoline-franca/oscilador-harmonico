@@ -1,7 +1,7 @@
-# nodes saída x,v; entrada [x0, v0, t]
+# nodes saída: trajetória completa; entrada: [x0, v0]
 
 """
-Nodes do pipeline MLP.
+Nodes do pipeline MLP para previsão de trajetórias completas.
 """
 
 import numpy as np
@@ -18,8 +18,10 @@ from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict, Any, Tuple
 from .model import MLP
 from oscilador_harmonico.utils import (
+    CORES_PALETA,
     cria_grafico_real_previsto_mlp,
     cria_grafico_distribuicao_dados,
+    cria_grafico_historico_treinamento,
     cria_grafico_previsoes_espaco_fases,
     cria_grafico_interpolacao_completo,
     cria_grafico_interpolacao_espaco_fases,
@@ -28,7 +30,6 @@ from oscilador_harmonico.utils import (
     cria_grafico_interpolacao_pontual_completo,
     cria_grafico_interpolacao_entre_trajetorias_espaco_fases,
     cria_grafico_interpolacao_trajetorias_espaco_fases,
-    CORES_PALETA
 )
 
 
@@ -49,10 +50,11 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     """
     Prepara os dados para treinamento do MLP.
     
-    Entrada: [x0, v0, tempo]
-    Saída: [posicao, velocidade]
+    Entrada: [x0, v0]
+    Saída: Trajetória completa [x_0, v_0, x_1, v_1, ..., x_N, v_N]
     
-    Nota: A frequência angular é constante para todos os dados.
+    O tempo é usado apenas para organizar os pontos da trajetória,
+    mas não é uma feature de entrada.
     """
     
     for col in base_oscilador.columns:
@@ -68,14 +70,14 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
             print("  AVISO: Valores 'nan' encontrados em id_trajetoria. Recriando identificadores...")
             base_oscilador['id_trajetoria'] = 'sistema_' + base_oscilador['sistema_id'].astype(str) + '_condicao_' + base_oscilador['simulacao_id'].astype(str)
     
-    if base_oscilador[['x0', 'v0', 'tempo']].isnull().any().any():
+    if base_oscilador[['x0', 'v0']].isnull().any().any():
         print("  AVISO: Valores NaN detectados nas colunas numéricas!")
-        base_oscilador = base_oscilador.dropna(subset=['x0', 'v0', 'tempo'])
+        base_oscilador = base_oscilador.dropna(subset=['x0', 'v0'])
     
     frequencia_angular_unica = base_oscilador['frequencia_angular'].iloc[0] if len(base_oscilador) > 0 else 5.0
     print(f"\n=== BASE DE DADOS ===")
     print(f"  Frequência angular do sistema: {frequencia_angular_unica} rad/s")
-    print(f"  Total de linhas: {len(base_oscilador)}")
+    print(f"  Total de linhas da base: {len(base_oscilador)}")
     
     if 'id_trajetoria' in base_oscilador.columns:
         trajetorias_unicas = base_oscilador['id_trajetoria'].unique()
@@ -95,78 +97,99 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         trajetorias_unicas = base_oscilador['id_trajetoria'].unique()
         print(f"  Total de trajetórias criadas: {len(trajetorias_unicas)}")
     
-    features_entrada = ['x0', 'v0', 'tempo']
-    features_saida = ['posicao', 'velocidade']
+    # obtém o número de pontos por trajetória a partir dos dados
+    # cada trajetória tem a mesma quantidade de pontos (definido pela simulação)
+    primeiro_grupo = base_oscilador[base_oscilador['id_trajetoria'] == trajetorias_unicas[0]].sort_values('tempo')
+    num_timesteps = len(primeiro_grupo)
     
     print(f"\n=== PREPARAÇÃO DOS DADOS ===")
     
-    if len(trajetorias_unicas) < 2:
-        print(f"\n  ERRO: Apenas {len(trajetorias_unicas)} trajetória(s) encontrada(s)!")
-        print("  Não é possível dividir em treino/validação/teste.")
-        print("  Verifique se a base foi gerada corretamente com múltiplas condições iniciais.")
-        print("\n  Criando divisão artificial para debug...")
-        trajetorias_train = trajetorias_unicas[:max(1, len(trajetorias_unicas)//2)]
-        trajetorias_val = []
-        trajetorias_test = []
+    X_list = []  # [x0, v0] para cada trajetória
+    y_list = []  # trajetória completa intercalada para cada trajetória
+    tempos_list = []  # tempos para referência
+    
+    for traj_id in trajetorias_unicas:
+        grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].sort_values('tempo')
         
-        if len(trajetorias_unicas) == 1:
-            trajetorias_train = trajetorias_unicas
-            trajetorias_val = trajetorias_unicas
-            trajetorias_test = trajetorias_unicas
-    else:
-        # divide as trajetórias em treino, validação e teste (70-20-10)
-        trajetorias_train, trajetorias_temp = train_test_split(
-            trajetorias_unicas, test_size=0.30, random_state=42
-        )
-        trajetorias_val, trajetorias_test = train_test_split(
-            trajetorias_temp, test_size=0.3333, random_state=42
-        )
-    
-    print(f"  Trajetórias de treino: {len(trajetorias_train)}")
-    print(f"  Trajetórias de validação: {len(trajetorias_val)}")
-    print(f"  Trajetórias de teste: {len(trajetorias_test)}")
-    
-    # seleciona os dados de cada conjunto baseado nas trajetórias
-    dados_train = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_train)]
-    dados_val = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_val)]
-    dados_test = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_test)]
-    
-    X_raw_train = dados_train[features_entrada].values.astype(np.float32)
-    y_raw_train = dados_train[features_saida].values.astype(np.float32)
-    
-    X_raw_val = dados_val[features_entrada].values.astype(np.float32)
-    y_raw_val = dados_val[features_saida].values.astype(np.float32)
-    
-    X_raw_test = dados_test[features_entrada].values.astype(np.float32)
-    y_raw_test = dados_test[features_saida].values.astype(np.float32)
+        # verifica se todos os pontos estão presentes
+        if len(grupo) != num_timesteps:
+            print(f"  AVISO: Trajetória {traj_id} tem {len(grupo)} pontos, pulando...")
+            continue
         
-    print(f"  Amostras de treino: {X_raw_train.shape[0]}")
-    print(f"  Amostras de validação: {X_raw_val.shape[0]}")
-    print(f"  Amostras de teste: {X_raw_test.shape[0]}")
+        # entrada: [x0, v0]
+        x0 = grupo['x0'].iloc[0]
+        v0 = grupo['v0'].iloc[0]
+        X_list.append([x0, v0])
         
-    # normalização padrão das variáveis de entrada e saída
+        # saída: trajetória completa intercalada [x0, v0, x1, v1, ..., xN, vN]
+        posicoes = grupo['posicao'].values
+        velocidades = grupo['velocidade'].values
+        trajetoria = np.column_stack([posicoes, velocidades]).flatten()
+        y_list.append(trajetoria)
+        
+        # tempos para referência
+        tempos_list.append(grupo['tempo'].values)
+    
+    X_raw = np.array(X_list, dtype=np.float32)
+    y_raw = np.array(y_list, dtype=np.float32)
+    tempos_referencia = np.array(tempos_list[0])
+    
+    print(f"  Trajetórias únicas: {len(X_raw)}")
+    print(f"  Dimensão entrada: {X_raw.shape[1]} (x0, v0)")
+    print(f"  Dimensão saída: {y_raw.shape[1]} (2N)")
+    print(f"  Nós de saída do modelo por trajetória: {num_timesteps}")
+    
+    # treino, validação e teste (70-20-10)
+    n_trajetorias = len(X_raw)
+    indices = np.random.permutation(n_trajetorias)
+    n_train = int(0.7 * n_trajetorias)
+    n_val = int(0.2 * n_trajetorias)
+    
+    train_indices = indices[:n_train]
+    val_indices = indices[n_train:n_train+n_val]
+    test_indices = indices[n_train+n_val:]
+    
+    X_train = X_raw[train_indices]
+    y_train = y_raw[train_indices]
+    X_val = X_raw[val_indices]
+    y_val = y_raw[val_indices]
+    X_test = X_raw[test_indices]
+    y_test = y_raw[test_indices]
+    
+    print(f"\n  Trajetórias de treino: {len(X_train)}")
+    print(f"  Trajetórias de validação: {len(X_val)}")
+    print(f"  Trajetórias de teste: {len(X_test)}")
+    print(f"  Amostras totais de treino: {len(X_train) * num_timesteps}")
+    print(f"  Amostras totais de validação: {len(X_val) * num_timesteps}")
+    print(f"  Amostras totais de teste: {len(X_test) * num_timesteps}")
+    
+    # normalização das variáveis de entrada e saída
     scaler_X = StandardScaler()
     scaler_y = StandardScaler()
     
-    X_scaled_train = scaler_X.fit_transform(X_raw_train)
-    X_scaled_val = scaler_X.transform(X_raw_val)
-    X_scaled_test = scaler_X.transform(X_raw_test)
+    X_scaled_train = scaler_X.fit_transform(X_train)
+    X_scaled_val = scaler_X.transform(X_val)
+    X_scaled_test = scaler_X.transform(X_test)
     
-    y_scaled_train = scaler_y.fit_transform(y_raw_train)
-    y_scaled_val = scaler_y.transform(y_raw_val)
-    y_scaled_test = scaler_y.transform(y_raw_test)
+    y_scaled_train = scaler_y.fit_transform(y_train)
+    y_scaled_val = scaler_y.transform(y_val)
+    y_scaled_test = scaler_y.transform(y_test)
     
-    input_dim = X_raw_train.shape[1]
-    output_dim = y_raw_train.shape[1]
+    input_dim = X_raw.shape[1]
+    output_dim = y_raw.shape[1]
     
-    print(f"  Dimensão entrada: {input_dim} (x0, v0, t)")
-    print(f"  Dimensão saída: {output_dim} (x, v)")
+    print(f"\n  Dimensão entrada: {input_dim} (x0, v0)")
+    print(f"  Dimensão saída: {output_dim} (2N)")
     
+    # tempos de referência e número de timesteps
     return (X_scaled_train, y_scaled_train, 
             X_scaled_val, y_scaled_val, 
             X_scaled_test, y_scaled_test, 
             input_dim, output_dim, scaler_X, scaler_y,
-            trajetorias_train, trajetorias_val, trajetorias_test)
+            trajetorias_unicas[train_indices], 
+            trajetorias_unicas[val_indices], 
+            trajetorias_unicas[test_indices],
+            num_timesteps, tempos_referencia)
 
 
 def visualiza_distribuicao_dados_separado(
@@ -240,7 +263,7 @@ def visualiza_distribuicao_dados_separado(
 
 
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
-    """Cria o modelo MLP."""
+    """Cria o modelo MLP para previsão de trajetórias completas."""
 
     mlp_config = parameters.get('mlp', {})
     seed = parameters.get('seed', 42)
@@ -259,9 +282,9 @@ def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, 
     )
     
     print("\n=== MODELO MLP CRIADO ===")
-    print(f"  Input dim: {input_dim} (x0, v0, t)")
-    print(f"  Hidden dims: {hidden_dims}")
-    print(f"  Output dim: {output_dim} (x, v)")
+    print(f"  Dimensão entrada: {input_dim} (x0, v0)")
+    print(f"  Camadas ocultas: {hidden_dims}")
+    print(f"  Dimensão saída: {output_dim}  (2N)")
     print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     print(f"  Função de ativação: {activation.capitalize()}")
     
@@ -276,14 +299,22 @@ def treina_mlp_node(
     y_val: np.ndarray,
     parameters: Dict[str, Any]
 ) -> Tuple[nn.Module, Dict]:
-    """Treina o modelo MLP."""
+    """Treina o modelo MLP para prever trajetórias completas."""
 
     mlp_config = parameters.get('mlp', {})
     
     batch_size = mlp_config.get('batch_size', 512)
     epochs = mlp_config.get('epochs', 500)
     learning_rate = mlp_config.get('learning_rate', 0.005)
-    # weight_decay = mlp_config.get('weight_decay', 0.00005)
+    weight_decay = 0.0001
+    
+    exp_name = parameters.get('exp_name', 'default_exp')
+    data_version = parameters.get('data_version', 'base_01')
+    
+    output_dir = f"data/08_reporting/{exp_name}/{data_version}"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    grafico_historico_loss = f"{output_dir}/historico_treinamento_loss.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Dispositivo: {device}")
@@ -302,7 +333,7 @@ def treina_mlp_node(
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=0.0)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
     
     history = {
@@ -311,11 +342,11 @@ def treina_mlp_node(
     }
     
     print("\n=== INICIANDO TREINAMENTO DO MLP ===")
-    print(f"  Entrada: (x0, v0, t) -> Saída: (x, v)")
+    print(f"  Entrada: (x0, v0) -> Saída: (trajetória completa)")
     print(f"  Batch size: {batch_size}")
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
-    print(f"  Função loss: MSE (Mean Squared Error)")
+    print(f"  Função loss: RMSE (Root Mean Squared Error)")
     
     for epoch in range(epochs):
         # treino
@@ -356,9 +387,25 @@ def treina_mlp_node(
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
-        
+    
+    # ============================================
+    # GRÁFICO: Histórico de Treinamento
+    # ============================================
+    
+    fig = cria_grafico_historico_treinamento(
+        history=history,
+        titulo="Evolução da Função de Custo durante o Treinamento do MLP"
+    )
+    
+    fig.write_html(grafico_historico_loss)
+    
+    print(f"\n=== TREINAMENTO CONCLUÍDO ===")
+    print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
+    print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
+    
+    fig.show()
+    
     return model, history
-
 
 def avalia_metricas_mlp_node(
     model: nn.Module,
@@ -366,9 +413,13 @@ def avalia_metricas_mlp_node(
     y_val: np.ndarray,
     X_test: np.ndarray,
     y_test: np.ndarray,
-    scaler_y: StandardScaler
+    scaler_y: StandardScaler,
 ) -> Dict[str, float]:
-    """Avalia o modelo MLP nos dados de validação e teste."""
+    """
+    Avalia o modelo MLP nos dados de validação e teste.
+    
+    Avalia tanto a trajetória completa quanto cada ponto individualmente.
+    """
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -386,16 +437,28 @@ def avalia_metricas_mlp_node(
     y_val_original = scaler_y.inverse_transform(y_val)
     predictions_test = scaler_y.inverse_transform(predictions_scaled_test)
     y_test_original = scaler_y.inverse_transform(y_test)
-
-    rmse_pos_val = float(np.sqrt(mean_squared_error(y_val_original[:, 0], predictions_val[:, 0])))
-    rmse_vel_val = float(np.sqrt(mean_squared_error(y_val_original[:, 1], predictions_val[:, 1])))
-    r2_pos_val = float(r2_score(y_val_original[:, 0], predictions_val[:, 0]))
-    r2_vel_val = float(r2_score(y_val_original[:, 1], predictions_val[:, 1]))
     
-    rmse_pos_test = float(np.sqrt(mean_squared_error(y_test_original[:, 0], predictions_test[:, 0])))
-    rmse_vel_test = float(np.sqrt(mean_squared_error(y_test_original[:, 1], predictions_test[:, 1])))
-    r2_pos_test = float(r2_score(y_test_original[:, 0], predictions_test[:, 0]))
-    r2_vel_test = float(r2_score(y_test_original[:, 1], predictions_test[:, 1]))
+    # separa posições e velocidades das trajetórias
+    pos_pred_val = predictions_val[:, 0::2]
+    vel_pred_val = predictions_val[:, 1::2]
+    pos_true_val = y_val_original[:, 0::2]
+    vel_true_val = y_val_original[:, 1::2]
+    
+    pos_pred_test = predictions_test[:, 0::2]
+    vel_pred_test = predictions_test[:, 1::2]
+    pos_true_test = y_test_original[:, 0::2]
+    vel_true_test = y_test_original[:, 1::2]
+    
+    # avalia ponto a ponto
+    rmse_pos_val = float(np.sqrt(mean_squared_error(pos_true_val.flatten(), pos_pred_val.flatten())))
+    rmse_vel_val = float(np.sqrt(mean_squared_error(vel_true_val.flatten(), vel_pred_val.flatten())))
+    r2_pos_val = float(r2_score(pos_true_val.flatten(), pos_pred_val.flatten()))
+    r2_vel_val = float(r2_score(vel_true_val.flatten(), vel_pred_val.flatten()))
+    
+    rmse_pos_test = float(np.sqrt(mean_squared_error(pos_true_test.flatten(), pos_pred_test.flatten())))
+    rmse_vel_test = float(np.sqrt(mean_squared_error(vel_true_test.flatten(), vel_pred_test.flatten())))
+    r2_pos_test = float(r2_score(pos_true_test.flatten(), pos_pred_test.flatten()))
+    r2_vel_test = float(r2_score(vel_true_test.flatten(), vel_pred_test.flatten()))
 
     metrics = {
         'rmse_posicao_val': rmse_pos_val,
@@ -409,12 +472,12 @@ def avalia_metricas_mlp_node(
     }
     
     print("\n=== AVALIAÇÃO DO MODELO MLP ===")
-    print(f"  RMSE Posição Validação: {rmse_pos_val:.6f}")
-    print(f"  RMSE Velocidade Validação: {rmse_vel_val:.6f}")
+    print(f"  RMSE Posição Validação: {rmse_pos_val:.6f} m")
+    print(f"  RMSE Velocidade Validação: {rmse_vel_val:.6f} m/s")
     print(f"  R² Posição Validação: {r2_pos_val:.4f}")
     print(f"  R² Velocidade Validação: {r2_vel_val:.4f}")
-    print(f"  RMSE Posição Teste: {rmse_pos_test:.6f}")
-    print(f"  RMSE Velocidade Teste: {rmse_vel_test:.6f}")
+    print(f"  RMSE Posição Teste: {rmse_pos_test:.6f} m")
+    print(f"  RMSE Velocidade Teste: {rmse_vel_test:.6f} m/s")
     print(f"  R² Posição Teste: {r2_pos_test:.4f}")
     print(f"  R² Velocidade Teste: {r2_vel_test:.4f}")
 
@@ -426,17 +489,20 @@ def visualiza_previsoes_mlp_node(
     X_test: np.ndarray,
     y_test: np.ndarray,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray
 ) -> None:
     """
     Visualiza as previsões do modelo MLP nos dados de teste.
+    Mostra trajetórias completas no espaço de fases.
     
     Args:
         model: Modelo treinado
-        X_test: Dados de teste
-        y_test: Targets de teste
+        X_test: Dados de teste (condições iniciais)
+        y_test: Targets de teste (trajetórias completas)
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
+        tempos_referencia: Array com os tempos para plotagem
     """
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
@@ -459,10 +525,36 @@ def visualiza_previsoes_mlp_node(
     predictions = scaler_y.inverse_transform(predictions_scaled)
     y_test_original = scaler_y.inverse_transform(y_test)
     
+    # separa algumas trajetórias para visualização
+    num_trajetorias_vis = min(5, len(predictions))
+    indices_vis = np.random.choice(len(predictions), num_trajetorias_vis, replace=False)
+    
+    # dados para visualização ponto a ponto
+    predictions_flat = []
+    y_true_flat = []
+    
+    for idx in indices_vis:
+        # para cada trajetória, extrai pontos individuais
+        pred_traj = predictions[idx]
+        true_traj = y_test_original[idx]
+        
+        # intercala posições e velocidades
+        pred_pos = pred_traj[0::2]
+        pred_vel = pred_traj[1::2]
+        true_pos = true_traj[0::2]
+        true_vel = true_traj[1::2]
+        
+        for i in range(len(pred_pos)):
+            predictions_flat.append([pred_pos[i], pred_vel[i]])
+            y_true_flat.append([true_pos[i], true_vel[i]])
+    
+    predictions_flat = np.array(predictions_flat)
+    y_true_flat = np.array(y_true_flat)
+    
     fig = cria_grafico_real_previsto_mlp(
-        predictions=predictions,
-        y_true=y_test_original,
-        titulo="Real vs Previsto - Dados de Teste (Por Trajetória)"
+        predictions=predictions_flat,
+        y_true=y_true_flat,
+        titulo="Real vs Previsto (Dados de Teste)"
     )
     
     fig.write_html(grafico_previsoes_mlp)    
@@ -476,17 +568,20 @@ def visualiza_previsoes_espaco_fases_node(
     X_test: np.ndarray,
     y_test: np.ndarray,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray
 ) -> None:
     """
     Node: Visualiza as previsões do modelo no espaço de fases (Posição vs Velocidade).
+    Mostra trajetórias completas.
     
     Args:
         model: Modelo treinado
-        X_test: Dados de teste
-        y_test: Targets de teste (posição e velocidade normalizadas)
+        X_test: Dados de teste (condições iniciais)
+        y_test: Targets de teste (trajetórias completas)
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
+        tempos_referencia: Array com os tempos para plotagem
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -502,7 +597,8 @@ def visualiza_previsoes_espaco_fases_node(
     model.eval()
     
     print("\n=== VISUALIZAÇÃO DAS PREVISÕES NO ESPAÇO DE FASES ===")
-    print(f"  Amostras de teste: {len(X_test)}")
+    print(f"  Número de trajetórias de teste: {len(X_test)}")
+    print(f"  Nós de saída do modelo por trajetória: {len(tempos_referencia)}")
     
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
     
@@ -513,10 +609,34 @@ def visualiza_previsoes_espaco_fases_node(
     predictions = scaler_y.inverse_transform(predictions_scaled)
     y_test_original = scaler_y.inverse_transform(y_test)
     
-    y_pos_true = y_test_original[:, 0].reshape(-1, 1)
-    y_vel_true = y_test_original[:, 1].reshape(-1, 1)
-    y_pos_pred = predictions[:, 0].reshape(-1, 1)
-    y_vel_pred = predictions[:, 1].reshape(-1, 1)
+    # seleciona algumas trajetórias para visualização
+    num_trajetorias_vis = min(10, len(predictions))
+    indices_vis = np.random.choice(len(predictions), num_trajetorias_vis, replace=False)
+    
+    # dados para o gráfico de espaço de fases
+    y_pos_true_list = []
+    y_vel_true_list = []
+    y_pos_pred_list = []
+    y_vel_pred_list = []
+    
+    for idx in indices_vis:
+        pred_traj = predictions[idx]
+        true_traj = y_test_original[idx]
+        
+        pred_pos = pred_traj[0::2]
+        pred_vel = pred_traj[1::2]
+        true_pos = true_traj[0::2]
+        true_vel = true_traj[1::2]
+        
+        y_pos_true_list.extend(true_pos)
+        y_vel_true_list.extend(true_vel)
+        y_pos_pred_list.extend(pred_pos)
+        y_vel_pred_list.extend(pred_vel)
+    
+    y_pos_true = np.array(y_pos_true_list).reshape(-1, 1)
+    y_vel_true = np.array(y_vel_true_list).reshape(-1, 1)
+    y_pos_pred = np.array(y_pos_pred_list).reshape(-1, 1)
+    y_vel_pred = np.array(y_vel_pred_list).reshape(-1, 1)
     
     # calcula métricas para exibição
     rmse_pos = np.sqrt(mean_squared_error(y_pos_true, y_pos_pred))
@@ -534,7 +654,7 @@ def visualiza_previsoes_espaco_fases_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Previsões do Modelo no Espaço de Fases - Dados de Teste (Por Trajetória)"
+        titulo="Previsões do Modelo no Espaço de Fases"
     )
     
     fig.write_html(grafico_previsoes_espaco_fases)    
@@ -547,7 +667,8 @@ def interpola_trajetorias_avulsas_node(
     model: nn.Module,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray = None
 ) -> None:
     """
     Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
@@ -555,10 +676,11 @@ def interpola_trajetorias_avulsas_node(
     Nota: A frequência angular é fixa para todos os casos.
     
     Args:
-        model: Modelo MLP treinado
+        model: Modelo MLP treinado (prevê trajetórias completas)
         scaler_X: Scaler das features de entrada
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
+        tempos_referencia: Array com os tempos para plotagem (opcional)
     """
 
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -574,10 +696,19 @@ def interpola_trajetorias_avulsas_node(
     model = model.to(device)
     model.eval()
     
-    sim_params = parameters.get('simulation', {})
-    dt = sim_params.get('dt', 0.01)
     intervals = parameters.get('intervals', {})
     omega_fixo = intervals.get('omega', 5.0)
+    
+    if tempos_referencia is None:
+        sim_params = parameters.get('simulation', {})
+        dt = sim_params.get('dt', 0.01)
+        T = 2 * np.pi / omega_fixo
+        tempos_referencia = np.arange(0, T + dt, dt)
+        print(f"  Tempos de referência criados: {len(tempos_referencia)} pontos")
+    else:
+        print(f"\n  Nós de saída do modelo por trajetória: {len(tempos_referencia)} pontos")
+    
+    num_timesteps = len(tempos_referencia)
     
     # casos de teste para interpolação (apenas condições iniciais variam)
     casos_teste = [
@@ -586,7 +717,6 @@ def interpola_trajetorias_avulsas_node(
             "x0": 0.3,
             "v0": 0.0,
             "omega": 5.1,
-            "t_final": 2 * np.pi / 5.1,
             "cor": CORES_PALETA[0]
         },
         {
@@ -594,7 +724,6 @@ def interpola_trajetorias_avulsas_node(
             "x0": -0.3,
             "v0": 1.0,
             "omega": omega_fixo,
-            "t_final": 2 * np.pi / omega_fixo,
             "cor": CORES_PALETA[1]
         },
         {
@@ -602,7 +731,6 @@ def interpola_trajetorias_avulsas_node(
             "x0": 0.5,
             "v0": -1.0,
             "omega": omega_fixo,
-            "t_final": 2 * np.pi / omega_fixo,
             "cor": CORES_PALETA[2]
         },
         {
@@ -610,19 +738,19 @@ def interpola_trajetorias_avulsas_node(
             "x0": -0.1,
             "v0": 0.5,
             "omega": omega_fixo,
-            "t_final": 2 * np.pi / omega_fixo,
             "cor": CORES_PALETA[3]
         },
-
     ]
     
     # gera os nomes das legendas dinamicamente
     for caso in casos_teste:
+        T = 2 * np.pi / caso["omega"] if caso["omega"] > 0 else 2 * np.pi / omega_fixo
+        caso["t_final"] = T
         caso["nome_legenda"] = (
             f"{caso['nome']}: x0={caso['x0']:.1f} m, "
             f"v0={caso['v0']:.1f} m/s, "
-            f"ω={omega_fixo:.1f} rad/s, "
-            f"T={caso['t_final']:.2f} s"
+            f"ω={caso['omega']:.1f} rad/s, "
+            f"T={T:.2f} s"
         )
     
     tempos_lista = []
@@ -630,50 +758,64 @@ def interpola_trajetorias_avulsas_node(
     velocidades_lista = []
     
     for caso in casos_teste:
-        t_max = caso["t_final"]
-        tempos = np.arange(0, t_max + dt, dt)
+        # verifica se o número de timesteps é compatível com o modelo
+        if len(tempos_referencia) != num_timesteps:
+            print(f"  AVISO: {caso['nome']} - Ajustando tempos para {num_timesteps} pontos")
+            tempos = np.linspace(tempos_referencia[0], tempos_referencia[-1], num_timesteps)
+        else:
+            tempos = tempos_referencia
         
-        # prepara as entradas (apenas x0, v0, tempo)
-        X_caso = np.zeros((len(tempos), 3))
-        X_caso[:, 0] = caso["x0"]
-        X_caso[:, 1] = caso["v0"]
-        X_caso[:, 2] = tempos
+        # entrada: [x0, v0]
+        X_caso = np.array([[caso["x0"], caso["v0"]]], dtype=np.float32)
         
-        # normaliza e faz previsão (todos os pontos da mesma trajetória juntos)
+        # normaliza a entrada
         X_caso_scaled = scaler_X.transform(X_caso)
         X_tensor = torch.tensor(X_caso_scaled, dtype=torch.float32).to(device)
         
+        # previsão: trajetória completa
         with torch.no_grad():
             predictions_scaled = model(X_tensor).cpu().numpy()
         
+        # desnormaliza a trajetória completa
         predictions = scaler_y.inverse_transform(predictions_scaled)
         
-        tempos_lista.append(tempos)
-        posicoes_lista.append(predictions[:, 0])
-        velocidades_lista.append(predictions[:, 1])
+        # separa posições e velocidades da trajetória completa
+        posicoes = predictions[0, 0::2]  # posições (índices pares)
+        velocidades = predictions[0, 1::2]  # velocidades (índices ímpares)
         
+        # se os tempos não têm o mesmo tamanho, ajusta
+        if len(posicoes) != len(tempos):
+            print(f"  AVISO: {caso['nome']} - Ajustando tempos para {len(posicoes)} pontos")
+            tempos = np.linspace(tempos[0], tempos[-1], len(posicoes))
+        
+        tempos_lista.append(tempos)
+        posicoes_lista.append(posicoes)
+        velocidades_lista.append(velocidades)
+        
+        caso["num_pontos"] = len(posicoes)
+        caso["dt"] = tempos[1] - tempos[0] if len(tempos) > 1 else 0
+    
+    print("\n=== INTERPOLAÇÃO DE TRAJETÓRIAS AVULSAS ===")
+    for caso in casos_teste:
+        print(f"    {caso['nome']}: x0={caso['x0']:.1f} m, v0={caso['v0']:.1f} m/s, ω={caso['omega']:.1f} rad/s")
+    
     fig_completo = cria_grafico_interpolacao_completo(
         tempos_lista=tempos_lista,
         posicoes_lista=posicoes_lista,
         velocidades_lista=velocidades_lista,
         casos_info=casos_teste,
-        titulo="Interpolação Avulsa: Posição e Velocidade vs Tempo (Por Trajetória)"
+        titulo="Interpolação Avulsa: Posição e Velocidade vs Tempo"
     )
     
     fig_fases = cria_grafico_interpolacao_espaco_fases(
         posicoes_lista=posicoes_lista,
         velocidades_lista=velocidades_lista,
         casos_info=casos_teste,
-        titulo="Interpolação Avulsa: Espaço de Fases (Por Trajetória)"
+        titulo="Interpolação Avulsa: Espaço de Fases"
     )
     
     fig_completo.write_html(grafico_interpolacao_completa)
     fig_fases.write_html(grafico_interpolacao_espaco_fases)
-    
-    print("\n=== MODELO PARA INTERPOLAÇÃO ===")
-    print(f"  Passo de tempo: {dt} s")
-    print(f"  Período: {2 * np.pi / omega_fixo:.2f} s")
-    print(f"  Número de casos testados: {len(casos_teste)}")
     
     fig_completo.show()
     fig_fases.show()
@@ -684,19 +826,21 @@ def interpolacoes_pontuais_mlp_node(
     model: nn.Module,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray = None
 ) -> pd.DataFrame:
     """
     Node: Usa o modelo treinado para fazer interpolação entre pontos de dados gerados aleatoriamente.
-    Faz previsões pontuais independentes em pontos que não estão no conjunto original de treino/validação/teste.
+    Faz previsões de trajetórias completas a partir de condições iniciais aleatórias.
     Nota: A interpolação é feita dentro da mesma trajetória, variando apenas o tempo.
     A frequência angular é constante.
     
     Args:
-        model: Modelo MLP treinado
+        model: Modelo MLP treinado (prevê trajetórias completas)
         scaler_X: Scaler das features de entrada
         scaler_y: Scaler dos targets
         parameters: Parâmetros do pipeline
+        tempos_referencia: Array com os tempos de referência (opcional)
         
     Returns:
         DataFrame com os dados interpolados e previsões do modelo
@@ -738,31 +882,32 @@ def interpolacoes_pontuais_mlp_node(
     
     # número de trajetórias a serem geradas
     num_trajetorias = 2
-       
+    
+    print(f"\n  Gerando {num_trajetorias} trajetórias aleatórias:")
+    print(f"    x0 no intervalo [{x0_min:.3f}, {x0_max:.3f}]")
+    print(f"    v0 no intervalo [{v0_min:.3f}, {v0_max:.3f}]")
+    
     # gera condições iniciais aleatórias
     x0_values = np.random.uniform(x0_min, x0_max, num_trajetorias)
     v0_values = np.random.uniform(v0_min, v0_max, num_trajetorias)
     
-    # calcula o período do sistema
-    T = 2 * np.pi / omega_fixo
-    
-    # define o tempo máximo como 1 período (como no treinamento)
-    tempo_maximo = T  # 1 período completo
-    
-    # número de pontos por trajetória
-    num_pontos_por_trajetoria = 1000
-    
-    # calcula o passo temporal
-    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
-    
-    print(f"\n  Configuração da interpolação:")
-    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-    print(f"    Período: {T:.3f} s")
-    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
-    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
-    
-    # gera os tempos interpolados
-    tempos_interpolados = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+    # Define o número de pontos baseado nos tempos de referência ou padrão
+    if tempos_referencia is not None:
+        num_pontos_por_trajetoria = len(tempos_referencia)
+        tempos_interpolados = tempos_referencia
+        print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+    else:
+        # calcula o período do sistema
+        T = 2 * np.pi / omega_fixo
+        tempo_maximo = T  # 1 período completo
+        num_pontos_por_trajetoria = 1000
+        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        tempos_interpolados = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        print(f"\n  Configuração da interpolação:")
+        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+        print(f"    Período: {T:.3f} s")
+        print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+        print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -788,31 +933,58 @@ def interpolacoes_pontuais_mlp_node(
         vel_reais_interpolados = -x0 * omega_fixo * np.sin(omega_fixo * tempos_interpolados) + \
                                  v0 * np.cos(omega_fixo * tempos_interpolados)
         
-        # prepara entrada para o modelo (x0, v0, tempo)
-        X_interpolado = np.zeros((len(tempos_interpolados), 3))
-        X_interpolado[:, 0] = x0
-        X_interpolado[:, 1] = v0
-        X_interpolado[:, 2] = tempos_interpolados
+        # Prepara entrada para o modelo: apenas [x0, v0] (sem tempo)
+        # O modelo prevê a trajetória completa de uma só vez
+        X_interpolado = np.array([[x0, v0]], dtype=np.float32)
         
-        # normaliza e faz previsão
+        # Normaliza e faz previsão
         X_interpolado_scaled = scaler_X.transform(X_interpolado)
         X_tensor = torch.tensor(X_interpolado_scaled, dtype=torch.float32).to(device)
         
         with torch.no_grad():
             pred_scaled = model(X_tensor).cpu().numpy()
         
+        # Desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        # armazena para métricas globais
-        todas_previsoes.append(pred)
-        todos_reais_interpolados.append(np.column_stack([pos_reais_interpolados, vel_reais_interpolados]))
+        # Separa posições e velocidades da trajetória completa
+        # A saída está no formato: [x0, v0, x1, v1, ..., xN, vN]
+        posicoes_previstas = pred[0, 0::2]  # Pega as posições (índices pares)
+        velocidades_previstas = pred[0, 1::2]  # Pega as velocidades (índices ímpares)
         
-        # armazena informações para gráfico temporal
-        tempos_lista.append(tempos_interpolados)
-        posicoes_previstas_lista.append(pred[:, 0])
-        velocidades_previstas_lista.append(pred[:, 1])
-        posicoes_reais_lista.append(pos_reais_interpolados)
-        velocidades_reais_lista.append(vel_reais_interpolados)
+        # Verifica se o número de pontos coincide
+        if len(posicoes_previstas) != len(tempos_interpolados):
+            print(f"    AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_interpolados[0], tempos_interpolados[-1], len(posicoes_previstas))
+        else:
+            tempos_ajustados = tempos_interpolados
+        
+        # Armazena para métricas globais (ponto a ponto para compatibilidade)
+        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
+        real_pontos = np.column_stack([pos_reais_interpolados, vel_reais_interpolados])
+        
+        # Se houver diferença no número de pontos, ajusta
+        if len(posicoes_previstas) != len(pos_reais_interpolados):
+            # Interpola os valores reais para o mesmo número de pontos
+            from scipy.interpolate import interp1d
+            interp_pos = interp1d(tempos_interpolados, pos_reais_interpolados, kind='linear', fill_value='extrapolate')
+            interp_vel = interp1d(tempos_interpolados, vel_reais_interpolados, kind='linear', fill_value='extrapolate')
+            pos_reais_ajustados = interp_pos(tempos_ajustados)
+            vel_reais_ajustados = interp_vel(tempos_ajustados)
+            real_pontos = np.column_stack([pos_reais_ajustados, vel_reais_ajustados])
+            tempos_para_grafico = tempos_ajustados
+        else:
+            tempos_para_grafico = tempos_interpolados
+        
+        todas_previsoes.append(pred_pontos)
+        todos_reais_interpolados.append(real_pontos)
+        
+        # Armazena informações para gráfico temporal
+        tempos_lista.append(tempos_para_grafico)
+        posicoes_previstas_lista.append(posicoes_previstas)
+        velocidades_previstas_lista.append(velocidades_previstas)
+        posicoes_reais_lista.append(pos_reais_interpolados[:len(tempos_para_grafico)])
+        velocidades_reais_lista.append(vel_reais_interpolados[:len(tempos_para_grafico)])
         
         cor = CORES_PALETA[idx % len(CORES_PALETA)]
         
@@ -823,21 +995,22 @@ def interpolacoes_pontuais_mlp_node(
             'cor': cor
         })
         
-        for k in range(len(tempos_interpolados)):
+        # Registros para o DataFrame
+        for k in range(len(tempos_para_grafico)):
             dados_interpolados.append({
                 'id_trajetoria': f"x0_{x0:.3f}_v0_{v0:.3f}",
                 'x0': x0,
                 'v0': v0,
                 'omega': omega_fixo,
-                'tempo_interpolado': tempos_interpolados[k],
-                'posicao_analitica': pos_reais_interpolados[k],
-                'velocidade_analitica': vel_reais_interpolados[k],
-                'posicao_prevista_mlp': pred[k, 0],
-                'velocidade_prevista_mlp': pred[k, 1],
-                'erro_posicao': pred[k, 0] - pos_reais_interpolados[k],
-                'erro_velocidade': pred[k, 1] - vel_reais_interpolados[k],
-                'erro_abs_posicao': abs(pred[k, 0] - pos_reais_interpolados[k]),
-                'erro_abs_velocidade': abs(pred[k, 1] - vel_reais_interpolados[k]),
+                'tempo_interpolado': tempos_para_grafico[k],
+                'posicao_analitica': real_pontos[k, 0],
+                'velocidade_analitica': real_pontos[k, 1],
+                'posicao_prevista_mlp': pred_pontos[k, 0],
+                'velocidade_prevista_mlp': pred_pontos[k, 1],
+                'erro_posicao': pred_pontos[k, 0] - real_pontos[k, 0],
+                'erro_velocidade': pred_pontos[k, 1] - real_pontos[k, 1],
+                'erro_abs_posicao': abs(pred_pontos[k, 0] - real_pontos[k, 0]),
+                'erro_abs_velocidade': abs(pred_pontos[k, 1] - real_pontos[k, 1]),
             })
     
     if len(todas_previsoes) == 0:
@@ -852,7 +1025,8 @@ def interpolacoes_pontuais_mlp_node(
     r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
     r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
     
-    print(f"\n  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
+    print(f"\n  Total de pontos interpolados: {len(predictions_all)}")
+    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
     print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
     print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
     print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
@@ -864,7 +1038,7 @@ def interpolacoes_pontuais_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação Pontual: Solução Analítica vs MLP - Dados Gerados Aleatoriamente (Por Trajetória)"
+        titulo="Interpolação Pontual: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
     )
     
     fig1.write_html(grafico_interpolacao_pontual)
@@ -883,7 +1057,7 @@ def interpolacoes_pontuais_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
+        titulo="Interpolação Pontual: MLP vs Solução Analítica - Espaço de Fases"
     )
     
     fig2.write_html(grafico_interpolacao_pontual_espaco_fases)
@@ -899,7 +1073,7 @@ def interpolacoes_pontuais_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
+        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
     )
     
     fig3.write_html(grafico_interpolacao_pontual_temporal)
@@ -918,12 +1092,14 @@ def interpolacoes_pontuais_mlp_node(
     df_interpolado.attrs['num_trajetorias'] = num_trajetorias
     df_interpolado.attrs['pontos_por_trajetoria'] = num_pontos_por_trajetoria
     df_interpolado.attrs['omega_fixo'] = omega_fixo
-    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
-    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
+    df_interpolado.attrs['tempo_maximo'] = tempo_maximo if tempos_referencia is None else tempos_referencia[-1]
+    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao if tempos_referencia is None else tempos_referencia[1] - tempos_referencia[0]
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
     df_interpolado.attrs['v0_min'] = v0_min
     df_interpolado.attrs['v0_max'] = v0_max
+    
+    print(f"\n  Base de dados com interpolação temporal dentro de {num_trajetorias} trajetórias gerada com {len(df_interpolado)} registros")
     
     return df_interpolado
 
@@ -932,12 +1108,14 @@ def interpola_entre_trajetorias_mlp_node(
     model: nn.Module,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray = None
 ) -> pd.DataFrame:
     """
     Node: Usa o modelo treinado para fazer interpolação entre trajetórias.
     Para cada instante de tempo, interpola entre duas trajetórias diferentes (variando x0 e v0).
     Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
+    Agora prevê trajetórias completas a partir das condições iniciais.
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -973,26 +1151,24 @@ def interpola_entre_trajetorias_mlp_node(
     v0_min = intervals.get('v0_min', -1.0)
     v0_max = intervals.get('v0_max', 1.0)
     
-    # calcula o período do sistema
-    T = 2 * np.pi / omega_fixo
+    # define o número de pontos baseado nos tempos de referência ou padrão
+    if tempos_referencia is not None:
+        num_pontos_por_trajetoria = len(tempos_referencia)
+        tempos_unicos = tempos_referencia
+        print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+    else:
+        # calcula o período do sistema
+        T = 2 * np.pi / omega_fixo
+        tempo_maximo = T  # 1 período completo
+        num_pontos_por_trajetoria = 1000
+        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        print(f"\n  Configuração da interpolação:")
+        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+        print(f"    Período: {T:.3f} s")
+        print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+        print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
-    # define o tempo máximo como 1 período (como no treinamento)
-    tempo_maximo = T  # 1 período completo
-    
-    # número de pontos por trajetória
-    num_pontos_por_trajetoria = 1000
-    
-    # calcula o passo temporal
-    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
-    
-    print(f"\n  Configuração da interpolação:")
-    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-    print(f"    Período: {T:.3f} s")
-    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
-    
-    # gera os tempos interpolados
-    tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
-            
     # gera uma trajetória com amplitude pequena e outra com amplitude grande
     # para garantir que sejam diferentes, geramos várias e selecionamos as extremas
     x0_candidates = np.random.uniform(x0_min, x0_max, 100)
@@ -1031,30 +1207,46 @@ def interpola_entre_trajetorias_mlp_node(
         x0_interp = (1 - alpha) * x0_1 + alpha * x0_2
         v0_interp = (1 - alpha) * v0_1 + alpha * v0_2
         
-        X_interpolado = np.zeros((len(tempos_unicos), 3))
-        X_interpolado[:, 0] = x0_interp
-        X_interpolado[:, 1] = v0_interp
-        X_interpolado[:, 2] = tempos_unicos
+        # entrada para o modelo: x0, v0
+        X_interpolado = np.array([[x0_interp, v0_interp]], dtype=np.float32)
         
+        # normaliza e faz previsão
         X_interpolado_scaled = scaler_X.transform(X_interpolado)
         X_tensor = torch.tensor(X_interpolado_scaled, dtype=torch.float32).to(device)
         
         with torch.no_grad():
             pred_scaled = model(X_tensor).cpu().numpy()
         
+        # desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        pos_analitico = x0_interp * np.cos(omega_fixo * tempos_unicos) + \
-                        (v0_interp / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
-        vel_analitico = -x0_interp * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
-                        v0_interp * np.cos(omega_fixo * tempos_unicos)
+        # separa posições e velocidades da trajetória completa
+        # a saída está no formato: [x0, v0, x1, v1, ..., xN, vN]
+        posicoes_previstas = pred[0, 0::2]  # posições (índices pares)
+        velocidades_previstas = pred[0, 1::2]  # velocidades (índices ímpares)
         
-        todas_previsoes.append(pred)
-        todos_reais_interpolados.append(np.column_stack([pos_analitico, vel_analitico]))
+        # verifica se o número de pontos coincide com os tempos
+        if len(posicoes_previstas) != len(tempos_unicos):
+            print(f"  AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(posicoes_previstas))
+        else:
+            tempos_ajustados = tempos_unicos
         
-        tempos_lista.append(tempos_unicos)
-        posicoes_previstas_lista.append(pred[:, 0])
-        velocidades_previstas_lista.append(pred[:, 1])
+        # solução analítica para validação
+        pos_analitico = x0_interp * np.cos(omega_fixo * tempos_ajustados) + \
+                        (v0_interp / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
+        vel_analitico = -x0_interp * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
+                        v0_interp * np.cos(omega_fixo * tempos_ajustados)
+        
+        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
+        real_pontos = np.column_stack([pos_analitico, vel_analitico])
+        
+        todas_previsoes.append(pred_pontos)
+        todos_reais_interpolados.append(real_pontos)
+        
+        tempos_lista.append(tempos_ajustados)
+        posicoes_previstas_lista.append(posicoes_previstas)
+        velocidades_previstas_lista.append(velocidades_previstas)
         posicoes_reais_lista.append(pos_analitico)
         velocidades_reais_lista.append(vel_analitico)
         
@@ -1069,7 +1261,7 @@ def interpola_entre_trajetorias_mlp_node(
             'cor': cor
         })
         
-        for k in range(len(tempos_unicos)):
+        for k in range(len(tempos_ajustados)):
             dados_interpolados.append({
                 'alpha_interpolacao': alpha,
                 'x0_original_1': x0_1,
@@ -1079,17 +1271,17 @@ def interpola_entre_trajetorias_mlp_node(
                 'x0_interpolado': x0_interp,
                 'v0_interpolado': v0_interp,
                 'omega': omega_fixo,
-                'tempo': tempos_unicos[k],
+                'tempo': tempos_ajustados[k],
                 'posicao_analitica': pos_analitico[k],
                 'velocidade_analitica': vel_analitico[k],
-                'posicao_prevista_mlp': pred[k, 0],
-                'velocidade_prevista_mlp': pred[k, 1],
-                'erro_posicao': pred[k, 0] - pos_analitico[k],
-                'erro_velocidade': pred[k, 1] - vel_analitico[k],
-                'erro_abs_posicao': abs(pred[k, 0] - pos_analitico[k]),
-                'erro_abs_velocidade': abs(pred[k, 1] - vel_analitico[k]),
-                'erro_rel_posicao_pct': (abs(pred[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
-                'erro_rel_velocidade_pct': (abs(pred[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
+                'posicao_prevista_mlp': pred_pontos[k, 0],
+                'velocidade_prevista_mlp': pred_pontos[k, 1],
+                'erro_posicao': pred_pontos[k, 0] - pos_analitico[k],
+                'erro_velocidade': pred_pontos[k, 1] - vel_analitico[k],
+                'erro_abs_posicao': abs(pred_pontos[k, 0] - pos_analitico[k]),
+                'erro_abs_velocidade': abs(pred_pontos[k, 1] - vel_analitico[k]),
+                'erro_rel_posicao_pct': (abs(pred_pontos[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
+                'erro_rel_velocidade_pct': (abs(pred_pontos[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
             })
     
     if len(todas_previsoes) == 0:
@@ -1104,7 +1296,8 @@ def interpola_entre_trajetorias_mlp_node(
     r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
     r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
     
-    print(f"\n  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
+    print(f"\n  Total de pontos interpolados: {len(predictions_all)}")
+    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
     print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
     print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
     print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
@@ -1116,7 +1309,7 @@ def interpola_entre_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação entre Trajetórias: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
+        titulo="Interpolação entre Trajetórias: Solução Analítica vs MLP"
     )
     
     fig1.write_html(grafico_interpolacao_entre_trajetorias)
@@ -1135,7 +1328,7 @@ def interpola_entre_trajetorias_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
+        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Espaço de Fases"
     )
     
     fig2.write_html(grafico_interpolacao_entre_trajetorias_espaco_fases)
@@ -1151,7 +1344,7 @@ def interpola_entre_trajetorias_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
+        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
     )
     
     fig3.write_html(grafico_interpolacao_entre_trajetorias_temporal)
@@ -1169,10 +1362,8 @@ def interpola_entre_trajetorias_mlp_node(
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_trajetorias'] = 2
     df_interpolado.attrs['num_alpha'] = len(alphas)
-    df_interpolado.attrs['num_tempos'] = len(tempos_unicos)
+    df_interpolado.attrs['num_tempos'] = len(tempos_ajustados)
     df_interpolado.attrs['omega_fixo'] = omega_fixo
-    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
-    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
     df_interpolado.attrs['v0_min'] = v0_min
@@ -1182,16 +1373,16 @@ def interpola_entre_trajetorias_mlp_node(
     # GRÁFICO 4: Trajetórias Originais e Interpoladas no Espaço de Fases
     # ========================================================================
     
-    # gera as trajetórias originais analiticamente para o gráfico
-    pos_traj1 = x0_1 * np.cos(omega_fixo * tempos_unicos) + \
-                (v0_1 / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
-    vel_traj1 = -x0_1 * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
-                v0_1 * np.cos(omega_fixo * tempos_unicos)
+    # gera trajetórias originais analiticamente para o gráfico
+    pos_traj1 = x0_1 * np.cos(omega_fixo * tempos_ajustados) + \
+                (v0_1 / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
+    vel_traj1 = -x0_1 * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
+                v0_1 * np.cos(omega_fixo * tempos_ajustados)
     
-    pos_traj2 = x0_2 * np.cos(omega_fixo * tempos_unicos) + \
-                (v0_2 / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
-    vel_traj2 = -x0_2 * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
-                v0_2 * np.cos(omega_fixo * tempos_unicos)
+    pos_traj2 = x0_2 * np.cos(omega_fixo * tempos_ajustados) + \
+                (v0_2 / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
+    vel_traj2 = -x0_2 * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
+                v0_2 * np.cos(omega_fixo * tempos_ajustados)
     
     # interpolações
     interpolacoes_para_grafico = []
@@ -1229,7 +1420,7 @@ def interpola_entre_trajetorias_mlp_node(
         trajetoria2_vel=vel_traj2,
         interpolacoes_lista=interpolacoes_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Interpolação entre Trajetórias no Espaço de Fases - Dados Gerados Aleatoriamente"
+        titulo="Interpolação entre Trajetórias no Espaço de Fases"
     )
     
     grafico_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases_detalhado.html"
@@ -1244,12 +1435,14 @@ def interpola_trajetorias_mlp_node(
     model: nn.Module,
     scaler_X: StandardScaler,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    tempos_referencia: np.ndarray = None
 ) -> pd.DataFrame:
     """
     Node: Usa o modelo treinado para gerar diferentes condições iniciais a partir de uma trajetória base.
     A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e v0.
     Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
+    Agora prevê trajetórias completas a partir das condições iniciais.
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')
@@ -1277,7 +1470,7 @@ def interpola_trajetorias_mlp_node(
     seed = parameters.get('seed', 42)
     np.random.seed(seed)
     
-    print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DE TRAJETÓRIA BASE ===")
+    print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DA TRAJETÓRIA BASE ===")
     print(f"  Frequência: {omega_fixo} rad/s")
     print("  Gerando novas condições iniciais variando x0 e v0 dentro dos limites de treino do modelo")
     
@@ -1285,26 +1478,23 @@ def interpola_trajetorias_mlp_node(
     # GERAÇÃO DE DADOS ALEATÓRIOS
     # ============================================
     
-    # calcula o período do sistema
-    T = 2 * np.pi / omega_fixo
-    
-    # define o tempo máximo como 1 período (como no treinamento)
-    tempo_maximo = T  # 1 período completo
-    
-    # número de pontos por trajetória
-    num_pontos_por_trajetoria = 1000
-    
-    # calcula o passo temporal
-    dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
-    
-    print(f"\n  Configuração da interpolação:")
-    print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-    print(f"    Período: {T:.3f} s")
-    print(f"    Passo temporal: {dt_interpolacao:.6f} s")
-    print(f"    Pontos por trajetória: {num_pontos_por_trajetoria}")
-    
-    # gera os tempos únicos
-    tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+    # define o número de pontos baseado nos tempos de referência ou padrão
+    if tempos_referencia is not None:
+        num_pontos_por_trajetoria = len(tempos_referencia)
+        tempos_unicos = tempos_referencia
+        print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+    else:
+        # calcula o período do sistema
+        T = 2 * np.pi / omega_fixo
+        tempo_maximo = T  # 1 período completo
+        num_pontos_por_trajetoria = 1000
+        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        print(f"\n  Configuração da interpolação:")
+        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
+        print(f"    Período: {T:.3f} s")
+        print(f"    Passo temporal: {dt_interpolacao:.6f} s")
+        print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
     # gera uma trajetória base aleatória
     x0_base = np.random.uniform(x0_min, x0_max)
@@ -1314,7 +1504,6 @@ def interpola_trajetorias_mlp_node(
     print(f"    x0 = {x0_base:.3f} m")
     print(f"    v0 = {v0_base:.3f} m/s")
     print(f"    Período: {tempos_unicos.max():.3f} s")
-    print(f"    {len(tempos_unicos)} instantes de tempo")
     
     num_variacoes = 5
     variacoes = []
@@ -1331,7 +1520,7 @@ def interpola_trajetorias_mlp_node(
             'v0': v0_variacoes[i],
             'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
         })
-        print(f"    Interpolação {i+1}: x0={x0_variacoes[i]:.3f} m, v0={v0_variacoes[i]:.3f} m/s")
+        print(f"    Caso {i+1}: x0={x0_variacoes[i]:.3f} m, v0={v0_variacoes[i]:.3f} m/s")
     
     todas_previsoes = []
     todos_reais_interpolados = []
@@ -1349,11 +1538,8 @@ def interpola_trajetorias_mlp_node(
         x0_novo = var['x0']
         v0_novo = var['v0']
         
-        # prepara entrada para o modelo (apenas x0, v0, tempo)
-        X_novo = np.zeros((len(tempos_unicos), 3))
-        X_novo[:, 0] = x0_novo
-        X_novo[:, 1] = v0_novo
-        X_novo[:, 2] = tempos_unicos
+        # entrada para o modelo: x0, v0
+        X_novo = np.array([[x0_novo, v0_novo]], dtype=np.float32)
         
         # normaliza e faz previsão
         X_novo_scaled = scaler_X.transform(X_novo)
@@ -1362,20 +1548,37 @@ def interpola_trajetorias_mlp_node(
         with torch.no_grad():
             pred_scaled = model(X_tensor).cpu().numpy()
         
+        # desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        # solução analítica para validação
-        pos_analitico = x0_novo * np.cos(omega_fixo * tempos_unicos) + \
-                        (v0_novo / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
-        vel_analitico = -x0_novo * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
-                        v0_novo * np.cos(omega_fixo * tempos_unicos)
+        # separa posições e velocidades da trajetória completa
+        # saída: [x0, v0, x1, v1, ..., xN, vN]
+        posicoes_previstas = pred[0, 0::2]  # posições (índices pares)
+        velocidades_previstas = pred[0, 1::2]  # velocidades (índices ímpares)
         
-        todas_previsoes.append(pred)
-        todos_reais_interpolados.append(np.column_stack([pos_analitico, vel_analitico]))
+        # verifica se o número de pontos coincide com os tempos
+        if len(posicoes_previstas) != len(tempos_unicos):
+            print(f"  AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(posicoes_previstas))
+        else:
+            tempos_ajustados = tempos_unicos
         
-        tempos_lista.append(tempos_unicos)
-        posicoes_previstas_lista.append(pred[:, 0])
-        velocidades_previstas_lista.append(pred[:, 1])
+        # solução analítica
+        pos_analitico = x0_novo * np.cos(omega_fixo * tempos_ajustados) + \
+                        (v0_novo / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
+        vel_analitico = -x0_novo * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
+                        v0_novo * np.cos(omega_fixo * tempos_ajustados)
+        
+        # métricas globais (ponto a ponto para compatibilidade)
+        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
+        real_pontos = np.column_stack([pos_analitico, vel_analitico])
+        
+        todas_previsoes.append(pred_pontos)
+        todos_reais_interpolados.append(real_pontos)
+        
+        tempos_lista.append(tempos_ajustados)
+        posicoes_previstas_lista.append(posicoes_previstas)
+        velocidades_previstas_lista.append(velocidades_previstas)
         posicoes_reais_lista.append(pos_analitico)
         velocidades_reais_lista.append(vel_analitico)
         
@@ -1389,23 +1592,23 @@ def interpola_trajetorias_mlp_node(
             'variation_id': var_idx
         })
         
-        for k in range(len(tempos_unicos)):
+        for k in range(len(tempos_ajustados)):
             dados_interpolados.append({
                 'variacao_id': var_idx,
                 'x0': x0_novo,
                 'v0': v0_novo,
                 'omega': omega_fixo,
-                'tempo': tempos_unicos[k],
+                'tempo': tempos_ajustados[k],
                 'posicao_analitica': pos_analitico[k],
                 'velocidade_analitica': vel_analitico[k],
-                'posicao_prevista_mlp': pred[k, 0],
-                'velocidade_prevista_mlp': pred[k, 1],
-                'erro_posicao': pred[k, 0] - pos_analitico[k],
-                'erro_velocidade': pred[k, 1] - vel_analitico[k],
-                'erro_abs_posicao': abs(pred[k, 0] - pos_analitico[k]),
-                'erro_abs_velocidade': abs(pred[k, 1] - vel_analitico[k]),
-                'erro_rel_posicao_pct': (abs(pred[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
-                'erro_rel_velocidade_pct': (abs(pred[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
+                'posicao_prevista_mlp': pred_pontos[k, 0],
+                'velocidade_prevista_mlp': pred_pontos[k, 1],
+                'erro_posicao': pred_pontos[k, 0] - pos_analitico[k],
+                'erro_velocidade': pred_pontos[k, 1] - vel_analitico[k],
+                'erro_abs_posicao': abs(pred_pontos[k, 0] - pos_analitico[k]),
+                'erro_abs_velocidade': abs(pred_pontos[k, 1] - vel_analitico[k]),
+                'erro_rel_posicao_pct': (abs(pred_pontos[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
+                'erro_rel_velocidade_pct': (abs(pred_pontos[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
             })
     
     if len(todas_previsoes) == 0:
@@ -1433,7 +1636,7 @@ def interpola_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Novas Condições Iniciais: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
+        titulo="Novas Condições Iniciais: Solução Analítica vs MLP"
     )
     
     fig1.write_html(grafico_interpolacao_trajetorias)
@@ -1452,7 +1655,7 @@ def interpola_trajetorias_mlp_node(
         y_vel_true=y_vel_true,
         y_pos_pred=y_pos_pred,
         y_vel_pred=y_vel_pred,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases (Dados Gerados Aleatoriamente)"
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases"
     )
     
     fig2.write_html(grafico_interpolacao_trajetorias_espaco_fases)
@@ -1468,7 +1671,7 @@ def interpola_trajetorias_mlp_node(
         posicoes_reais_lista=posicoes_reais_lista,
         velocidades_reais_lista=velocidades_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo (Dados Gerados Aleatoriamente)"
+        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
     )
     
     fig3.write_html(grafico_interpolacao_trajetorias_temporal)
@@ -1485,10 +1688,8 @@ def interpola_trajetorias_mlp_node(
     df_interpolado.attrs['r2_velocidade'] = r2_vel
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_variacoes'] = num_variacoes
-    df_interpolado.attrs['num_tempos'] = len(tempos_unicos)
+    df_interpolado.attrs['num_tempos'] = len(tempos_ajustados)
     df_interpolado.attrs['omega_fixo'] = omega_fixo
-    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
-    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
     df_interpolado.attrs['v0_min'] = v0_min
@@ -1499,10 +1700,10 @@ def interpola_trajetorias_mlp_node(
     # ========================================================================
     
     # gera a trajetória base analiticamente
-    pos_base = x0_base * np.cos(omega_fixo * tempos_unicos) + \
-               (v0_base / omega_fixo) * np.sin(omega_fixo * tempos_unicos)
-    vel_base = -x0_base * omega_fixo * np.sin(omega_fixo * tempos_unicos) + \
-               v0_base * np.cos(omega_fixo * tempos_unicos)
+    pos_base = x0_base * np.cos(omega_fixo * tempos_ajustados) + \
+               (v0_base / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
+    vel_base = -x0_base * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
+               v0_base * np.cos(omega_fixo * tempos_ajustados)
     
     novas_trajetorias_para_grafico = []
     
@@ -1532,7 +1733,7 @@ def interpola_trajetorias_mlp_node(
         trajetoria_base_vel=vel_base,
         novas_trajetorias_lista=novas_trajetorias_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases - Dados Gerados Aleatoriamente"
+        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases"
     )
     
     grafico_novas_trajetorias = f"{output_dir}/trajetoria_base_vs_novas_condicoes.html"

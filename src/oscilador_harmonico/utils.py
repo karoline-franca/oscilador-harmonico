@@ -3,6 +3,7 @@ Utilitários para o pipeline do oscilador harmônico.
 """
 
 import numpy as np
+from typing import Dict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.metrics import mean_squared_error, r2_score
@@ -241,6 +242,110 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     return fig
 
 
+def cria_grafico_historico_treinamento(
+    history: Dict,
+    titulo: str = "Evolução da Função de Custo durante o Treinamento"
+) -> go.Figure:
+    """
+    Cria gráfico da evolução das losses de treino e validação ao longo das épocas.
+    
+    Args:
+        history: Dicionário contendo 'train_loss' e 'val_loss'
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    
+    epochs = list(range(1, len(history['train_loss']) + 1))
+    
+    fig = go.Figure()
+    
+    # loss de treino
+    fig.add_trace(go.Scatter(
+        x=epochs,
+        y=history['train_loss'],
+        mode='lines',
+        name='Loss de Treino',
+        line=dict(color='#2E7D32', width=2),
+        hovertemplate=(
+            f"<b>Loss de Treino</b><br>" +
+            f"Época: %{{x}}<br>" +
+            f"Loss: %{{y:.6f}}<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # loss de validação
+    fig.add_trace(go.Scatter(
+        x=epochs,
+        y=history['val_loss'],
+        mode='lines',
+        name='Loss de Validação',
+        line=dict(color='#B71C1C', width=2, dash='dash'),
+        hovertemplate=(
+            f"<b>Loss de Validação</b><br>" +
+            f"Época: %{{x}}<br>" +
+            f"Loss: %{{y:.6f}}<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    train_loss_final = history['train_loss'][-1] if history['train_loss'] else 0
+    val_loss_final = history['val_loss'][-1] if history['val_loss'] else 0
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            x=0.5,
+            y=0.95,
+            font=dict(size=16)
+        ),
+        xaxis_title="Época",
+        yaxis_title="Função de Custo (RMSE)",
+        width=1400,
+        height=800,
+        legend=dict(
+            title="Legenda",
+            x=0.85,
+            y=0.95,
+            xanchor='left',
+            yanchor='top',
+            bgcolor='rgba(255, 255, 255, 0.95)',
+            bordercolor='gray',
+            borderwidth=1,
+            font=dict(size=14)
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150, b=80, l=80, r=80),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14),
+            type='log'
+        )
+    )
+    
+    return fig
+
+
 def cria_grafico_distribuicao_dados(
     y_pos_train, y_vel_train,
     y_pos_val, y_vel_val,
@@ -249,6 +354,7 @@ def cria_grafico_distribuicao_dados(
 ):
     """
     Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
+    Para trajetórias completas, os dados são achatados para visualização pontual.
     
     Args:
         y_pos_train: Posições de treino
@@ -264,10 +370,18 @@ def cria_grafico_distribuicao_dados(
     """
     fig = go.Figure()
     
+    # achata as trajetórias para visualização
+    y_pos_train_flat = y_pos_train.flatten() if y_pos_train.ndim > 1 else y_pos_train
+    y_vel_train_flat = y_vel_train.flatten() if y_vel_train.ndim > 1 else y_vel_train
+    y_pos_val_flat = y_pos_val.flatten() if y_pos_val.ndim > 1 else y_pos_val
+    y_vel_val_flat = y_vel_val.flatten() if y_vel_val.ndim > 1 else y_vel_val
+    y_pos_test_flat = y_pos_test.flatten() if y_pos_test.ndim > 1 else y_pos_test
+    y_vel_test_flat = y_vel_test.flatten() if y_vel_test.ndim > 1 else y_vel_test
+    
     # treino
     fig.add_trace(go.Scatter(
-        x=y_pos_train.flatten(),
-        y=y_vel_train.flatten(),
+        x=y_pos_train_flat,
+        y=y_vel_train_flat,
         mode='markers',
         name='Dados de Treino (70%)',
         marker=dict(
@@ -286,8 +400,8 @@ def cria_grafico_distribuicao_dados(
     
     # validação
     fig.add_trace(go.Scatter(
-        x=y_pos_val.flatten(),
-        y=y_vel_val.flatten(),
+        x=y_pos_val_flat,
+        y=y_vel_val_flat,
         mode='markers',
         name='Dados de Validação (20%)',
         marker=dict(
@@ -306,8 +420,8 @@ def cria_grafico_distribuicao_dados(
     
     # teste
     fig.add_trace(go.Scatter(
-        x=y_pos_test.flatten(),
-        y=y_vel_test.flatten(),
+        x=y_pos_test_flat,
+        y=y_vel_test_flat,
         mode='markers',
         name='Dados de Teste (10%)',
         marker=dict(
@@ -324,9 +438,9 @@ def cria_grafico_distribuicao_dados(
         )
     ))
     
-    n_train = len(y_pos_train)
-    n_val = len(y_pos_val)
-    n_test = len(y_pos_test)
+    n_train = len(y_pos_train_flat)
+    n_val = len(y_pos_val_flat)
+    n_test = len(y_pos_test_flat)
     total = n_train + n_val + n_test
     
     fig.update_layout(
@@ -378,13 +492,15 @@ def cria_grafico_distribuicao_dados(
     
     return fig
 
+
 def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Modelo MLP"):
     """
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
+    Para trajetórias completas, os dados são achatados para visualização pontual.
     
     Args:
-        predictions: array com as previsões (n_samples, 2) - [x, v]
-        y_true: array com os valores reais (n_samples, 2) - [x, v]
+        predictions: array com as previsões (n_trajetorias, 2*n_timesteps) - trajetórias completas
+        y_true: array com os valores reais (n_trajetorias, 2*n_timesteps) - trajetórias completas
         titulo: título do gráfico
         
     Returns:
@@ -396,36 +512,75 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
         horizontal_spacing=0.15
     )
     
+    # achata as trajetórias para visualização pontual
+    if predictions.ndim > 1:
+        # separa posições e velocidades das trajetórias
+        pos_pred = predictions[:, 0::2].flatten()
+        vel_pred = predictions[:, 1::2].flatten()
+        pos_true = y_true[:, 0::2].flatten()
+        vel_true = y_true[:, 1::2].flatten()
+    else:
+        pos_pred = predictions[:, 0]
+        vel_pred = predictions[:, 1]
+        pos_true = y_true[:, 0]
+        vel_true = y_true[:, 1]
+    
     cores = ['blue', 'green']
     nomes = ['Posição', 'Velocidade']
     unidades = ['m', 'm/s']
     
-    for i in range(2):
-        # adiciona pontos de dispersão
-        fig.add_trace(
-            go.Scatter(
-                x=y_true[:, i],
-                y=predictions[:, i],
-                mode='markers',
-                name=f'{nomes[i]}',
-                marker=dict(
-                    color=cores[i],
-                    size=3,
-                    opacity=0.5
-                ),
-                hovertemplate=(
-                    f"<b>{nomes[i]}</b><br>" +
-                    f"Valor Real: %{{x:.3f}} {unidades[i]}<br>" +
-                    f"Valor Previsto: %{{y:.3f}} {unidades[i]}<br>" +
-                    f"<extra></extra>"
-                )
+    # posição
+    fig.add_trace(
+        go.Scatter(
+            x=pos_true,
+            y=pos_pred,
+            mode='markers',
+            name='Posição',
+            marker=dict(
+                color=cores[0],
+                size=3,
+                opacity=0.5
             ),
-            row=1, col=i+1
-        )
-        
-        # adiciona linha y=x (referência)
-        min_val = min(y_true[:, i].min(), predictions[:, i].min())
-        max_val = max(y_true[:, i].max(), predictions[:, i].max())
+            hovertemplate=(
+                f"<b>Posição</b><br>" +
+                f"Valor Real: %{{x:.3f}} m<br>" +
+                f"Valor Previsto: %{{y:.3f}} m<br>" +
+                f"<extra></extra>"
+            )
+        ),
+        row=1, col=1
+    )
+    
+    # velocidade
+    fig.add_trace(
+        go.Scatter(
+            x=vel_true,
+            y=vel_pred,
+            mode='markers',
+            name='Velocidade',
+            marker=dict(
+                color=cores[1],
+                size=3,
+                opacity=0.5
+            ),
+            hovertemplate=(
+                f"<b>Velocidade</b><br>" +
+                f"Valor Real: %{{x:.3f}} m/s<br>" +
+                f"Valor Previsto: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ),
+        row=1, col=2
+    )
+    
+    # linha y=x (referência) para ambos os gráficos
+    for i in range(2):
+        if i == 0:
+            min_val = min(pos_true.min(), pos_pred.min())
+            max_val = max(pos_true.max(), pos_pred.max())
+        else:
+            min_val = min(vel_true.min(), vel_pred.min())
+            max_val = max(vel_true.max(), vel_pred.max())
         
         fig.add_trace(
             go.Scatter(
@@ -434,7 +589,7 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
                 mode='lines',
                 name='Referência (y=x)',
                 line=dict(color='red', width=2, dash='dash'),
-                showlegend=(i == 0),  # mostra apenas na primeira coluna
+                showlegend=(i == 0),
                 hovertemplate='Referência: %{x:.3f}<extra></extra>'
             ),
             row=1, col=i+1
@@ -464,10 +619,10 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             tickfont=dict(size=16)
         )
     
-    rmse_pos = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
-    rmse_vel = np.sqrt(mean_squared_error(y_true[:, 1], predictions[:, 1]))
-    r2_pos = r2_score(y_true[:, 0], predictions[:, 0])
-    r2_vel = r2_score(y_true[:, 1], predictions[:, 1])
+    rmse_pos = np.sqrt(mean_squared_error(pos_true, pos_pred))
+    rmse_vel = np.sqrt(mean_squared_error(vel_true, vel_pred))
+    r2_pos = r2_score(pos_true, pos_pred)
+    r2_vel = r2_score(vel_true, vel_pred)
     
     fig.update_layout(
         title=dict(
@@ -508,6 +663,7 @@ def cria_grafico_previsoes_espaco_fases(
 ):
     """
     Cria gráfico 2D mostrando as previsões do modelo no espaço de fases.
+    Para trajetórias completas, os dados são achatados para visualização pontual.
     
     Args:
         y_pos_true: Posições reais
@@ -521,10 +677,22 @@ def cria_grafico_previsoes_espaco_fases(
     """
     fig = go.Figure()
     
+    # achata as trajetórias para visualização pontual
+    if y_pos_true.ndim > 1:
+        y_pos_true_flat = y_pos_true.flatten()
+        y_vel_true_flat = y_vel_true.flatten()
+        y_pos_pred_flat = y_pos_pred.flatten()
+        y_vel_pred_flat = y_vel_pred.flatten()
+    else:
+        y_pos_true_flat = y_pos_true
+        y_vel_true_flat = y_vel_true
+        y_pos_pred_flat = y_pos_pred
+        y_vel_pred_flat = y_vel_pred
+    
     # previsões do modelo
     fig.add_trace(go.Scatter(
-        x=y_pos_pred.flatten(),
-        y=y_vel_pred.flatten(),
+        x=y_pos_pred_flat,
+        y=y_vel_pred_flat,
         mode='markers',
         name='MLP',
         marker=dict(
@@ -543,8 +711,8 @@ def cria_grafico_previsoes_espaco_fases(
 
     # dados reais
     fig.add_trace(go.Scatter(
-        x=y_pos_true.flatten(),
-        y=y_vel_true.flatten(),
+        x=y_pos_true_flat,
+        y=y_vel_true_flat,
         mode='markers',
         name='Dados de Teste',
         marker=dict(
@@ -561,10 +729,10 @@ def cria_grafico_previsoes_espaco_fases(
         )
     ))
 
-    rmse_pos = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
-    rmse_vel = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
-    r2_pos = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
-    r2_vel = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+    rmse_pos = np.sqrt(mean_squared_error(y_pos_true_flat, y_pos_pred_flat))
+    rmse_vel = np.sqrt(mean_squared_error(y_vel_true_flat, y_vel_pred_flat))
+    r2_pos = r2_score(y_pos_true_flat, y_pos_pred_flat)
+    r2_vel = r2_score(y_vel_true_flat, y_vel_pred_flat)
     
     fig.update_layout(
         title=dict(
@@ -615,6 +783,155 @@ def cria_grafico_previsoes_espaco_fases(
     
     return fig
 
+
+def cria_grafico_trajetorias_completas(
+    posicoes_true, velocidades_true,
+    posicoes_pred, velocidades_pred,
+    tempos,
+    num_trajetorias=5,
+    titulo="Trajetórias Completas: Real vs Previsto"
+):
+    """
+    Cria gráfico mostrando trajetórias completas no espaço de fases.
+    
+    Args:
+        posicoes_true: Posições reais (n_trajetorias, n_timesteps)
+        velocidades_true: Velocidades reais (n_trajetorias, n_timesteps)
+        posicoes_pred: Posições previstas (n_trajetorias, n_timesteps)
+        velocidades_pred: Velocidades previstas (n_trajetorias, n_timesteps)
+        tempos: Array com os tempos
+        num_trajetorias: Número de trajetórias a serem exibidas
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Espaço de Fases', 'Posição e Velocidade vs Tempo'),
+        horizontal_spacing=0.15
+    )
+    
+    n_trajetorias = min(num_trajetorias, len(posicoes_true))
+    indices = np.random.choice(len(posicoes_true), n_trajetorias, replace=False)
+    
+    for idx, i in enumerate(indices):
+        cor = CORES_PALETA[idx % len(CORES_PALETA)]
+        
+        # Espaço de fases
+        # Real
+        fig.add_trace(
+            go.Scatter(
+                x=posicoes_true[i],
+                y=velocidades_true[i],
+                mode='lines',
+                name=f'Real {i}',
+                line=dict(color=cor, width=2, dash='solid'),
+                legendgroup=f'traj_{i}',
+                showlegend=True,
+                hovertemplate=(
+                    f"<b>Trajetória Real {i}</b><br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ),
+            row=1, col=1
+        )
+        
+        # Previsto
+        fig.add_trace(
+            go.Scatter(
+                x=posicoes_pred[i],
+                y=velocidades_pred[i],
+                mode='lines',
+                name=f'Previsto {i}',
+                line=dict(color=cor, width=2, dash='dash'),
+                legendgroup=f'traj_{i}',
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Trajetória Prevista {i}</b><br>" +
+                    f"Posição: %{{x:.3f}} m<br>" +
+                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ),
+            row=1, col=1
+        )
+        
+        # Posição vs Tempo
+        fig.add_trace(
+            go.Scatter(
+                x=tempos,
+                y=posicoes_true[i],
+                mode='lines',
+                name=f'Posição Real {i}',
+                line=dict(color=cor, width=2, dash='solid'),
+                legendgroup=f'traj_{i}',
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Posição Real {i}</b><br>" +
+                    f"Tempo: %{{x:.3f}} s<br>" +
+                    f"Posição: %{{y:.3f}} m<br>" +
+                    f"<extra></extra>"
+                )
+            ),
+            row=1, col=2
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=tempos,
+                y=posicoes_pred[i],
+                mode='lines',
+                name=f'Posição Prevista {i}',
+                line=dict(color=cor, width=2, dash='dash'),
+                legendgroup=f'traj_{i}',
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Posição Prevista {i}</b><br>" +
+                    f"Tempo: %{{x:.3f}} s<br>" +
+                    f"Posição: %{{y:.3f}} m<br>" +
+                    f"<extra></extra>"
+                )
+            ),
+            row=1, col=2
+        )
+    
+    fig.update_xaxes(title_text="Posição (m)", row=1, col=1)
+    fig.update_yaxes(title_text="Velocidade (m/s)", row=1, col=1)
+    fig.update_xaxes(title_text="Tempo (s)", row=1, col=2)
+    fig.update_yaxes(title_text="Posição (m)", row=1, col=2)
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span>",
+            x=0.5,
+            y=0.95,
+            font=dict(size=20)
+        ),
+        width=1600,
+        height=800,
+        showlegend=True,
+        legend=dict(
+            title="Legenda",
+            x=1.02,
+            y=0.5,
+            xanchor='left',
+            yanchor='middle',
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1,
+            font=dict(size=12)
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        margin=dict(t=100)
+    )
+    
+    return fig
+
+
 def cria_grafico_interpolacao_completo(
     tempos_lista,
     posicoes_lista,
@@ -624,6 +941,7 @@ def cria_grafico_interpolacao_completo(
 ):
     """
     Cria gráfico 2D combinando posição e velocidade no tempo.
+    Trabalha com trajetórias completas previstas a partir das condições iniciais.
     
     Args:
         tempos_lista: Lista de arrays com os tempos para cada caso
@@ -746,6 +1064,7 @@ def cria_grafico_interpolacao_espaco_fases(
 ):
     """
     Cria gráfico 2D mostrando as trajetórias previstas no espaço de fases.
+    Trabalha com trajetórias completas previstas a partir das condições iniciais.
     
     Args:
         posicoes_lista: Lista de arrays com as posições previstas para cada caso
@@ -763,7 +1082,7 @@ def cria_grafico_interpolacao_espaco_fases(
         
         nome_legenda = caso.get('nome_legenda', caso['nome'])
         
-        # trajetória
+        # trajetória completa no espaço de fases
         fig.add_trace(go.Scatter(
             x=posicoes,
             y=velocidades,
@@ -781,16 +1100,16 @@ def cria_grafico_interpolacao_espaco_fases(
             )
         ))
         
-        # ponto inicial
+        # ponto inicial (condição inicial)
         fig.add_trace(go.Scatter(
             x=[posicoes[0]],
             y=[velocidades[0]],
             mode='markers',
             marker=dict(
                 color=caso['cor'],
-                size=10,
+                size=12,
                 symbol='circle',
-                line=dict(color='white', width=1)
+                line=dict(color='white', width=1.5)
             ),
             name=f"Início - {nome_legenda}",
             showlegend=False,
@@ -801,10 +1120,32 @@ def cria_grafico_interpolacao_espaco_fases(
                 f"<extra></extra>"
             )
         ))
+        
+        # ponto final (fim da trajetória)
+        fig.add_trace(go.Scatter(
+            x=[posicoes[-1]],
+            y=[velocidades[-1]],
+            mode='markers',
+            marker=dict(
+                color=caso['cor'],
+                size=10,
+                symbol='x',
+                line=dict(color='white', width=1)
+            ),
+            name=f"Fim - {nome_legenda}",
+            showlegend=False,
+            hovertemplate=(
+                f"<b>Fim da Trajetória - {nome_legenda}</b><br>" +
+                f"Posição: %{{x:.3f}} m<br>" +
+                f"Velocidade: %{{y:.3f}} m/s<br>" +
+                f"<extra></extra>"
+            )
+        ))
     
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:16px; color:#555555;'>",
             x=0.35,
             font=dict(size=16)
         ),
@@ -846,6 +1187,7 @@ def cria_grafico_interpolacao_espaco_fases(
     
     return fig
 
+
 def cria_grafico_interpolacao_pontual_mlp(
     predictions,
     y_true,
@@ -853,10 +1195,11 @@ def cria_grafico_interpolacao_pontual_mlp(
 ):
     """
     Cria gráficos de dispersão para visualizar a interpolação pontual do modelo MLP.
+    Agora trabalha com pontos achatados de trajetórias completas.
     
     Args:
-        predictions: array com as previsões (n_samples, 2) - [x, v]
-        y_true: array com os valores reais (n_samples, 2) - [x, v]
+        predictions: array com as previsões (n_samples, 2) - [x, v] (pontos achatados)
+        y_true: array com os valores reais (n_samples, 2) - [x, v] (pontos achatados)
         titulo: título do gráfico
         
     Returns:
@@ -945,9 +1288,9 @@ def cria_grafico_interpolacao_pontual_mlp(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
-                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
+                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup><br>",
             x=0.45,
-            y=0.95,
+            y=0.92,
             font=dict(size=16)
         ),
         width=1400,
@@ -967,7 +1310,7 @@ def cria_grafico_interpolacao_pontual_mlp(
         plot_bgcolor='white',
         paper_bgcolor='white',
         hovermode='closest',
-        margin=dict(t=150)
+        margin=dict(t=180)
     )
     
     return fig
@@ -980,12 +1323,13 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
 ):
     """
     Cria gráfico 2D mostrando a interpolação pontual do modelo no espaço de fases.
+    Agora mostra trajetórias completas previstas a partir das condições iniciais.
     
     Args:
-        y_pos_true: Posições reais
-        y_vel_true: Velocidades reais
-        y_pos_pred: Posições previstas
-        y_vel_pred: Velocidades previstas
+        y_pos_true: Posições reais (pontos achatados)
+        y_vel_true: Velocidades reais (pontos achatados)
+        y_pos_pred: Posições previstas (pontos achatados)
+        y_vel_pred: Velocidades previstas (pontos achatados)
         titulo: Título do gráfico
         
     Returns:
@@ -1013,7 +1357,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         )
     ))
 
-    # dados reais
+    # dados reais (solução analítica)
     fig.add_trace(go.Scatter(
         x=y_pos_true.flatten(),
         y=y_vel_true.flatten(),
@@ -1043,8 +1387,9 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
                  f"<sup>RMSE Posição: {rmse_pos:.4f} m | RMSE Velocidade: {rmse_vel:.4f} m/s</sup><br>" +
-                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup>",
+                 f"<sup>R² Posição: {r2_pos:.4f} | R² Velocidade: {r2_vel:.4f}</sup><br>",
             x=0.5,
+            y=0.92,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -1065,7 +1410,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         hovermode='closest',
         plot_bgcolor='white',
         paper_bgcolor='white',
-        margin=dict(t=150),
+        margin=dict(t=180),
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
@@ -1088,6 +1433,7 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
     
     return fig
 
+
 def cria_grafico_interpolacao_pontual_completo(
     tempos_lista,
     posicoes_previstas_lista,
@@ -1099,13 +1445,14 @@ def cria_grafico_interpolacao_pontual_completo(
 ):
     """
     Cria gráfico 2D combinando posição e velocidade no tempo para interpolação pontual.
+    Mostra trajetórias completas previstas a partir das condições iniciais.
     
     Args:
-        tempos_lista: Lista de arrays com os tempos interpolados para cada caso
+        tempos_lista: Lista de arrays com os tempos para cada caso
         posicoes_previstas_lista: Lista de arrays com as posições previstas pelo MLP
         velocidades_previstas_lista: Lista de arrays com as velocidades previstas pelo MLP
-        posicoes_reais_lista: Lista de arrays com as posições reais (interpolação linear)
-        velocidades_reais_lista: Lista de arrays com as velocidades reais (interpolação linear)
+        posicoes_reais_lista: Lista de arrays com as posições reais (solução analítica)
+        velocidades_reais_lista: Lista de arrays com as velocidades reais (solução analítica)
         casos_info: Lista de dicionários com informações dos casos (x0, v0, omega, cor)
         titulo: Título do gráfico
         
@@ -1142,7 +1489,7 @@ def cria_grafico_interpolacao_pontual_completo(
             line=dict(color=caso['cor'], width=2, dash='solid'),
             legendgroup=f"posicao_mlp_{i}",
             hovertemplate=(
-                f"<b> Posição (MLP)</b><br>" +
+                f"<b>Posição (MLP)</b><br>" +
                 f"x₀ = {caso['x0']:.3f} m<br>" +
                 f"v₀ = {caso['v0']:.3f} m/s<br>" +
                 f"ω = {caso['omega']:.3f} rad/s<br>" +
@@ -1152,7 +1499,7 @@ def cria_grafico_interpolacao_pontual_completo(
             )
         ))
         
-        # posição real (interpolação linear)
+        # posição real (solução analítica)
         fig.add_trace(go.Scatter(
             x=tempos,
             y=pos_real,
@@ -1190,7 +1537,7 @@ def cria_grafico_interpolacao_pontual_completo(
             )
         ))
         
-        # velocidade real (interpolação linear)
+        # velocidade real (solução analítica)
         fig.add_trace(go.Scatter(
             x=tempos,
             y=vel_real,
@@ -1211,8 +1558,10 @@ def cria_grafico_interpolacao_pontual_completo(
     
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:16px; color:#555555;'>",
             x=0.5,
+            y=0.95,
             font=dict(size=16)
         ),
         xaxis_title="Tempo (s)",
@@ -1269,6 +1618,8 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
 ):
     """
     Cria gráfico 2D mostrando as duas trajetórias originais e as trajetórias interpoladas no espaço de fases.
+    Trabalha com trajetórias completas previstas a partir das condições iniciais.
+    Mostra os pontos inicial e final de cada trajetória.
     
     Args:
         trajetoria1_pos: Array com as posições da primeira trajetória
@@ -1321,7 +1672,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         )
     ))
     
-    # trajetórias interpoladas (0 < alpha < 1)
+    # trajetórias interpoladas (0 < alpha < 1) - trajetórias completas
     n_interpolacoes = len(interpolacoes_lista)
     if n_interpolacoes > 0:
         indices_cores = np.linspace(0, len(cores_paleta) - 1, n_interpolacoes, dtype=int)
@@ -1335,7 +1686,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             
             cor = cores_paleta[indices_cores[i] % len(cores_paleta)]
             
-            # linha da trajetória interpolada - mostra x0 e v0 na legenda
+            # linha da trajetória interpolada
             fig.add_trace(go.Scatter(
                 x=posicoes,
                 y=velocidades,
@@ -1373,6 +1724,27 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
                     f"<extra></extra>"
                 )
             ))
+            
+            # ponto final da trajetória interpolada
+            fig.add_trace(go.Scatter(
+                x=[posicoes[-1]],
+                y=[velocidades[-1]],
+                mode='markers',
+                marker=dict(
+                    color=cor,
+                    size=8,
+                    symbol='x',
+                    line=dict(color='white', width=1)
+                ),
+                name=f"Fim Trajetória Interpolada",
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Fim Trajetória Interpolada</b><br>" +
+                    f"x_final = {posicoes[-1]:.3f} m<br>" +
+                    f"v_final = {velocidades[-1]:.3f} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
     
     # ponto inicial da trajetória 1
     fig.add_trace(go.Scatter(
@@ -1385,6 +1757,17 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         hovertemplate=f"<b>Início Trajetória 1</b><br>x₀ = {caso_info.get('x0_1', 0):.3f} m<br>v₀ = {caso_info.get('v0_1', 0):.3f} m/s<br><extra></extra>"
     ))
     
+    # ponto final da trajetória 1
+    fig.add_trace(go.Scatter(
+        x=[trajetoria1_pos[-1]],
+        y=[trajetoria1_vel[-1]],
+        mode='markers',
+        marker=dict(color='blue', size=12, symbol='x', line=dict(color='white', width=2)),
+        name="Fim Trajetória 1",
+        showlegend=False,
+        hovertemplate=f"<b>Fim Trajetória 1</b><br>x_final = {trajetoria1_pos[-1]:.3f} m<br>v_final = {trajetoria1_vel[-1]:.3f} m/s<br><extra></extra>"
+    ))
+    
     # ponto inicial da trajetória 2
     fig.add_trace(go.Scatter(
         x=[trajetoria2_pos[0]],
@@ -1395,12 +1778,24 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         showlegend=False,
         hovertemplate=f"<b>Início Trajetória 2</b><br>x₀ = {caso_info.get('x0_2', 0):.3f} m<br>v₀ = {caso_info.get('v0_2', 0):.3f} m/s<br><extra></extra>"
     ))
+    
+    # ponto final da trajetória 2
+    fig.add_trace(go.Scatter(
+        x=[trajetoria2_pos[-1]],
+        y=[trajetoria2_vel[-1]],
+        mode='markers',
+        marker=dict(color='red', size=12, symbol='x', line=dict(color='white', width=2)),
+        name="Fim Trajetória 2",
+        showlegend=False,
+        hovertemplate=f"<b>Fim Trajetória 2</b><br>x_final = {trajetoria2_pos[-1]:.3f} m<br>v_final = {trajetoria2_vel[-1]:.3f} m/s<br><extra></extra>"
+    ))
      
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:16px; color:#555555;'>",
             x=0.45,
-            y=0.95,
+            y=0.92,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -1421,6 +1816,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
         hovermode='closest',
         plot_bgcolor='white',
         paper_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
@@ -1456,6 +1852,8 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
 ):
     """
     Cria gráfico 2D mostrando a trajetória base e as novas trajetórias geradas a partir de diferentes condições iniciais no espaço de fases.
+    Trabalha com trajetórias completas previstas a partir das condições iniciais.
+    Mostra os pontos inicial e final de cada trajetória.
     
     Args:
         trajetoria_base_pos: Array com as posições da trajetória base
@@ -1489,7 +1887,7 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
         )
     ))
     
-    # novas trajetórias
+    # novas trajetórias - trajetórias completas
     n_novas = len(novas_trajetorias_lista)
     if n_novas > 0:
         indices_cores = np.linspace(0, len(cores_paleta) - 1, n_novas, dtype=int)
@@ -1541,6 +1939,27 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
                     f"<extra></extra>"
                 )
             ))
+            
+            # ponto final da nova trajetória
+            fig.add_trace(go.Scatter(
+                x=[posicoes[-1]],
+                y=[velocidades[-1]],
+                mode='markers',
+                marker=dict(
+                    color=cor,
+                    size=8,
+                    symbol='x',
+                    line=dict(color='white', width=1)
+                ),
+                name=f"Fim Trajetória Interpolada",
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Fim Trajetória Interpolada</b><br>" +
+                    f"x_final = {posicoes[-1]:.3f} m<br>" +
+                    f"v_final = {velocidades[-1]:.3f} m/s<br>" +
+                    f"<extra></extra>"
+                )
+            ))
     
     # ponto inicial da trajetória base
     fig.add_trace(go.Scatter(
@@ -1553,11 +1972,23 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
         hovertemplate=f"<b>Início Trajetória Base</b><br>x₀ = {caso_info.get('x0_base', 0):.3f} m<br>v₀ = {caso_info.get('v0_base', 0):.3f} m/s<br><extra></extra>"
     ))
     
+    # ponto final da trajetória base
+    fig.add_trace(go.Scatter(
+        x=[trajetoria_base_pos[-1]],
+        y=[trajetoria_base_vel[-1]],
+        mode='markers',
+        marker=dict(color='blue', size=12, symbol='x', line=dict(color='white', width=2)),
+        name="Fim Trajetória Base",
+        showlegend=False,
+        hovertemplate=f"<b>Fim Trajetória Base</b><br>x_final = {trajetoria_base_pos[-1]:.3f} m<br>v_final = {trajetoria_base_vel[-1]:.3f} m/s<br><extra></extra>"
+    ))
+    
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:16px; color:#555555;'>",
             x=0.45,
-            y=0.95,
+            y=0.92,
             font=dict(size=16)
         ),
         xaxis_title="Posição (m)",
@@ -1578,6 +2009,7 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
         hovermode='closest',
         plot_bgcolor='white',
         paper_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=False,
             gridcolor='darkgray',
