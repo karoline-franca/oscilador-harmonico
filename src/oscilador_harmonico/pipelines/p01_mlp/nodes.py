@@ -417,7 +417,7 @@ def treina_mlp_node(
     
     Se base_oscilador e trajetorias_train forem fornecidos, aplica pesos
     inversos à amplitude para dar mais importância às trajetórias internas.
-    Estratégia: Weighted Loss - pesos na função de custo.
+    Estratégia: Weighted Sampling - amostragem ponderada no DataLoader.
     """
 
     mlp_config = parameters.get('mlp', {})
@@ -442,8 +442,8 @@ def treina_mlp_node(
     
     model = model.to(device)
 
-    use_weighted_loss = False
-    weights_por_amostra = None
+    use_weighted_sampling = False
+    sampler = None
     
     if base_oscilador is not None and trajetorias_train is not None:
         # calcula amplitude para cada trajetória de treino
@@ -480,28 +480,21 @@ def treina_mlp_node(
         fig_pesos.show()
         
         # ============================================
-        # ESTRATÉGIA: Weighted Loss
+        # ESTRATÉGIA: Weighted Sampling
         # ============================================
-        use_weighted_loss = True
+        use_weighted_sampling = True
         traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
+        weights = np.array([traj_peso_map[traj_id] for traj_id in trajetorias_train], dtype=np.float64)
         
-        # cria pesos para cada ponto da trajetória
-        weights_por_amostra = []
-        for traj_id in trajetorias_train:
-            peso = traj_peso_map[traj_id]
-            # obtém o número de pontos desta trajetória
-            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id]
-            n_pontos = len(grupo)
-            weights_por_amostra.extend([peso] * n_pontos)
+        # normaliza os pesos para somar 1
+        weights = weights / weights.sum()
         
-        weights_por_amostra = np.array(weights_por_amostra, dtype=np.float32)
-        # normaliza para ter média 1 (não alterar a escala da loss)
-        weights_por_amostra = weights_por_amostra / weights_por_amostra.mean()
-        
-        print(f"\n  Weighted Loss: {len(weights_por_amostra)} amostras com pesos")
-        print(f"    Peso médio: {weights_por_amostra.mean():.6f}")
-        print(f"    Peso mínimo: {weights_por_amostra.min():.6f}")
-        print(f"    Peso máximo: {weights_por_amostra.max():.6f}")
+        print(f"\n  Weighted Sampling: {len(weights)} trajetórias com pesos")
+        print(f"    Peso médio: {weights.mean():.6f}")
+        print(f"    Peso mínimo: {weights.min():.6f}")
+        print(f"    Peso máximo: {weights.max():.6f}")
+
+        sampler = WeightedRandomSampler(weights, len(weights), replacement=True)
         
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
@@ -511,9 +504,18 @@ def treina_mlp_node(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # configura o dataloader com ou sem amostragem ponderada
+    if use_weighted_sampling and sampler is not None:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+        print(f"\n  Usando WeightedRandomSampler para balancear trajetórias internas")
+        print(f"    Número de trajetórias: {len(weights)}")
+        print(f"    Batch size: {batch_size}")
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
     
@@ -529,52 +531,22 @@ def treina_mlp_node(
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
     
-    if use_weighted_loss:
-        print(f"  Estratégia: Weighted Loss (pesos inversos à amplitude)")
-        print(f"    Erros em trajetórias internas são penalizados com maior peso")
+    if use_weighted_sampling:
+        print(f"  Estratégia: Weighted Sampling (pesos inversos à amplitude)")
+        print(f"    Trajetórias internas têm maior probabilidade de serem amostradas")
     
     for epoch in range(epochs):
         # treino
         model.train()
         epoch_train_loss = 0
         
-        for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
+        for batch_X, batch_y in train_loader:
             batch_X = batch_X.to(device)
             batch_y = batch_y.to(device)
             
             optimizer.zero_grad()
             predictions = model(batch_X)
-            
-            # ============================================
-            # APLICAÇÃO DA WEIGHTED LOSS
-            # ============================================
-            if use_weighted_loss and weights_por_amostra is not None:
-                # obtém o tamanho real do batch atual
-                batch_size_real = len(batch_X)
-                
-                # calcula os índices corretos para este batch
-                start_idx = batch_idx * batch_size
-                
-                # garante que os índices não ultrapassem o tamanho do array de pesos
-                if start_idx + batch_size_real > len(weights_por_amostra):
-                    # último batch: pega os últimos elementos
-                    start_idx = len(weights_por_amostra) - batch_size_real
-                
-                # extrai os pesos para este batch
-                end_idx = start_idx + batch_size_real
-                batch_weights = torch.tensor(
-                    weights_por_amostra[start_idx:end_idx], 
-                    dtype=torch.float32
-                ).to(device)
-                
-                # loss ponderada
-                loss_per_element = (predictions - batch_y) ** 2
-                weighted_loss = (loss_per_element * batch_weights.reshape(-1, 1)).mean()
-                loss = weighted_loss
-            else:
-                # loss sem pesos
-                loss = nn.MSELoss()(predictions, batch_y)
-            
+            loss = criterion(predictions, batch_y)
             loss.backward()
             optimizer.step()
             
@@ -590,7 +562,7 @@ def treina_mlp_node(
                 batch_X = batch_X.to(device)
                 batch_y = batch_y.to(device)
                 predictions = model(batch_X)
-                loss = nn.MSELoss()(predictions, batch_y)
+                loss = criterion(predictions, batch_y)
                 epoch_val_loss += loss.item()
         
         epoch_val_loss /= len(val_loader)
@@ -604,8 +576,8 @@ def treina_mlp_node(
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
         
     titulo_historico = "Evolução da Função de Custo durante o Treinamento do MLP"
-    if use_weighted_loss:
-        titulo_historico += " (Weighted Loss)"
+    if use_weighted_sampling:
+        titulo_historico += " (Weighted Sampling)"
     
     fig = cria_grafico_historico_treinamento(
         history=history,
@@ -618,8 +590,8 @@ def treina_mlp_node(
     print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
     print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
     
-    if use_weighted_loss:
-        print(f"\n  Estratégia utilizada: Weighted Loss (trajetórias internas priorizadas)")
+    if use_weighted_sampling:
+        print(f"\n  Estratégia utilizada: Weighted Sampling (trajetórias internas priorizadas)")
     
     fig.show()
     
