@@ -353,9 +353,16 @@ def treina_mlp_node(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    base_oscilador: pd.DataFrame = None,
+    trajetorias_train: np.ndarray = None
 ) -> Tuple[nn.Module, Dict]:
-    """Treina o modelo MLP para prever trajetórias completas."""
+    """Treina o modelo MLP para prever trajetórias completas.
+    
+    Se base_oscilador e trajetorias_train forem fornecidos, aplica pesos
+    inversos à amplitude para dar mais importância às trajetórias internas.
+    Estratégia: Weighted Sampling - amostragem ponderada no DataLoader.
+    """
 
     mlp_config = parameters.get('mlp', {})
     
@@ -366,17 +373,73 @@ def treina_mlp_node(
     
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
+    omega = parameters.get('intervals', {}).get('omega', 5.0)
     
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_historico_loss = f"{output_dir}/historico_treinamento_loss.html"
+    grafico_pesos = f"{output_dir}/distribuicao_pesos_treino.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Dispositivo: {device}")
     
     model = model.to(device)
+
+    use_weighted_sampling = False
+    sampler = None
     
+    if base_oscilador is not None and trajetorias_train is not None:
+        # calcula amplitude para cada trajetória de treino
+        amplitudes = {}
+        for traj_id in trajetorias_train:
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+            x0 = grupo['x0']
+            v0 = grupo['v0']
+            amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
+            amplitudes[traj_id] = amplitude
+        
+        amplitudes_array = np.array(list(amplitudes.values()))
+
+        amplitude_min = amplitudes_array.min()
+        amplitude_max = amplitudes_array.max()
+        amplitudes_norm = (amplitudes_array - amplitude_min) / (amplitude_max - amplitude_min + 1e-8)
+        pesos_trajetorias = 1.0 / (amplitudes_norm + 0.01)
+        
+        print("\n=== DISTRIBUIÇÃO DOS PESOS POR AMPLITUDE ===")
+        print(f"  Amplitude mínima: {amplitudes_array.min():.4f} m")
+        print(f"  Amplitude máxima: {amplitudes_array.max():.4f} m")
+        print(f"  Peso médio: {pesos_trajetorias.mean():.4f}")
+        print(f"  Peso mínimo: {pesos_trajetorias.min():.4f}")
+        print(f"  Peso máximo: {pesos_trajetorias.max():.4f}")
+                
+        fig_pesos = cria_grafico_pesos_por_amplitude(
+            amplitudes=amplitudes_array,
+            pesos=pesos_trajetorias,
+            omega=omega,
+            titulo="Distribuição dos Pesos por Amplitude"
+        )
+        
+        fig_pesos.write_html(grafico_pesos)
+        fig_pesos.show()
+        
+        # ============================================
+        # ESTRATÉGIA: Weighted Sampling
+        # ============================================
+        use_weighted_sampling = True
+        traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
+        weights = np.array([traj_peso_map[traj_id] for traj_id in trajetorias_train], dtype=np.float64)
+        
+        # normaliza os pesos para somar 1
+        weights = weights / weights.sum()
+        
+        print(f"\n  Weighted Sampling: {len(weights)} trajetórias com pesos")
+        print(f"    Peso médio: {weights.mean():.6f}")
+        print(f"    Peso mínimo: {weights.min():.6f}")
+        print(f"    Peso máximo: {weights.max():.6f}")
+
+        sampler = WeightedRandomSampler(weights, len(weights), replacement=True)
+        
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
@@ -385,7 +448,15 @@ def treina_mlp_node(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # configura o dataloader com ou sem amostragem ponderada
+    if use_weighted_sampling and sampler is not None:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+        print(f"\n  Usando WeightedRandomSampler para balancear trajetórias internas")
+        print(f"    Número de trajetórias: {len(weights)}")
+        print(f"    Batch size: {batch_size}")
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     criterion = nn.MSELoss()
@@ -403,6 +474,10 @@ def treina_mlp_node(
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
+    
+    if use_weighted_sampling:
+        print(f"  Estratégia: Weighted Sampling (pesos inversos à amplitude)")
+        print(f"    Trajetórias internas têm maior probabilidade de serem amostradas")
     
     for epoch in range(epochs):
         # treino
@@ -443,14 +518,14 @@ def treina_mlp_node(
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
-    
-    # ============================================
-    # GRÁFICO: Histórico de Treinamento
-    # ============================================
+        
+    titulo_historico = "Evolução da Função de Custo durante o Treinamento do MLP"
+    if use_weighted_sampling:
+        titulo_historico += " (Weighted Sampling)"
     
     fig = cria_grafico_historico_treinamento(
         history=history,
-        titulo="Evolução da Função de Custo durante o Treinamento do MLP"
+        titulo=titulo_historico
     )
     
     fig.write_html(grafico_historico_loss)
@@ -458,6 +533,9 @@ def treina_mlp_node(
     print(f"\n=== TREINAMENTO CONCLUÍDO ===")
     print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
     print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
+    
+    if use_weighted_sampling:
+        print(f"\n  Estratégia utilizada: Weighted Sampling (trajetórias internas priorizadas)")
     
     fig.show()
     
