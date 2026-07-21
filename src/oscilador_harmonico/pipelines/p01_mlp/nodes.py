@@ -417,9 +417,7 @@ def treina_mlp_node(
     
     Se base_oscilador e trajetorias_train forem fornecidos, aplica pesos
     inversos à amplitude para dar mais importância às trajetórias internas.
-    Estratégias combinadas:
-    1. Weighted Sampling: amostragem ponderada no DataLoader
-    2. Weighted Loss: pesos na função de custo
+    Estratégia: Weighted Loss - pesos na função de custo.
     """
 
     mlp_config = parameters.get('mlp', {})
@@ -444,9 +442,7 @@ def treina_mlp_node(
     
     model = model.to(device)
 
-    use_weighted_sampling = False
     use_weighted_loss = False
-    sampler = None
     weights_por_amostra = None
     
     if base_oscilador is not None and trajetorias_train is not None:
@@ -484,26 +480,11 @@ def treina_mlp_node(
         fig_pesos.show()
         
         # ============================================
-        # ESTRATÉGIA 1: Weighted Sampling
-        # ============================================
-        use_weighted_sampling = True
-        traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
-        weights = np.array([traj_peso_map[traj_id] for traj_id in trajetorias_train], dtype=np.float64)
-        
-        # normaliza os pesos para somar 1
-        weights = weights / weights.sum()
-        
-        print(f"\n  Weighted Sampling: {len(weights)} trajetórias com pesos")
-        print(f"    Peso médio: {weights.mean():.6f}")
-        print(f"    Peso mínimo: {weights.min():.6f}")
-        print(f"    Peso máximo: {weights.max():.6f}")
-
-        sampler = WeightedRandomSampler(weights, len(weights), replacement=True)
-        
-        # ============================================
-        # ESTRATÉGIA 2: Weighted Loss
+        # ESTRATÉGIA: Weighted Loss
         # ============================================
         use_weighted_loss = True
+        traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
+        
         # cria pesos para cada ponto da trajetória
         weights_por_amostra = []
         for traj_id in trajetorias_train:
@@ -530,18 +511,9 @@ def treina_mlp_node(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    # configura o dataloader com ou sem amostragem ponderada
-    if use_weighted_sampling and sampler is not None:
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
-        print(f"\n  Usando WeightedRandomSampler para balancear trajetórias internas")
-        print(f"    Número de trajetórias: {len(weights)}")
-        print(f"    Batch size: {batch_size}")
-    else:
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
-    criterion = nn.MSELoss(reduction='none')  # reduction='none' para aplicar pesos
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
     
@@ -557,12 +529,8 @@ def treina_mlp_node(
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
     
-    if use_weighted_sampling:
-        print(f"  Estratégia 1: Weighted Sampling (pesos inversos à amplitude)")
-        print(f"    Trajetórias internas têm maior probabilidade de serem amostradas")
-    
     if use_weighted_loss:
-        print(f"  Estratégia 2: Weighted Loss (pesos inversos à amplitude)")
+        print(f"  Estratégia: Weighted Loss (pesos inversos à amplitude)")
         print(f"    Erros em trajetórias internas são penalizados com maior peso")
     
     for epoch in range(epochs):
@@ -581,24 +549,23 @@ def treina_mlp_node(
             # APLICAÇÃO DA WEIGHTED LOSS
             # ============================================
             if use_weighted_loss and weights_por_amostra is not None:
-                # obtém os índices das amostras no batch
-                if use_weighted_sampling:
-                    # os índices são amostrados aleatoriamente
-                    # usamos os pesos correspondentes a cada índice
-                    batch_indices = batch_idx * batch_size + np.arange(len(batch_X))
-                    batch_indices = batch_indices % len(weights_por_amostra)
-                    batch_weights = torch.tensor(
-                        weights_por_amostra[batch_indices], 
-                        dtype=torch.float32
-                    ).to(device)
-                else:
-                    # sem sampler, usamos os pesos na ordem do dataset
-                    start_idx = batch_idx * batch_size
-                    end_idx = min(start_idx + batch_size, len(weights_por_amostra))
-                    batch_weights = torch.tensor(
-                        weights_por_amostra[start_idx:end_idx], 
-                        dtype=torch.float32
-                    ).to(device)
+                # obtém o tamanho real do batch atual
+                batch_size_real = len(batch_X)
+                
+                # calcula os índices corretos para este batch
+                start_idx = batch_idx * batch_size
+                
+                # garante que os índices não ultrapassem o tamanho do array de pesos
+                if start_idx + batch_size_real > len(weights_por_amostra):
+                    # último batch: pega os últimos elementos
+                    start_idx = len(weights_por_amostra) - batch_size_real
+                
+                # extrai os pesos para este batch
+                end_idx = start_idx + batch_size_real
+                batch_weights = torch.tensor(
+                    weights_por_amostra[start_idx:end_idx], 
+                    dtype=torch.float32
+                ).to(device)
                 
                 # loss ponderada
                 loss_per_element = (predictions - batch_y) ** 2
@@ -637,11 +604,7 @@ def treina_mlp_node(
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
         
     titulo_historico = "Evolução da Função de Custo durante o Treinamento do MLP"
-    if use_weighted_sampling and use_weighted_loss:
-        titulo_historico += " (Weighted Sampling + Weighted Loss)"
-    elif use_weighted_sampling:
-        titulo_historico += " (Weighted Sampling)"
-    elif use_weighted_loss:
+    if use_weighted_loss:
         titulo_historico += " (Weighted Loss)"
     
     fig = cria_grafico_historico_treinamento(
@@ -655,13 +618,7 @@ def treina_mlp_node(
     print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
     print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
     
-    if use_weighted_sampling and use_weighted_loss:
-        print(f"\n  Estratégias utilizadas: Weighted Sampling + Weighted Loss")
-        print(f"    - Amostragem ponderada para balancear o dataset")
-        print(f"    - Função de custo ponderada para dar mais peso às trajetórias internas")
-    elif use_weighted_sampling:
-        print(f"\n  Estratégia utilizada: Weighted Sampling (trajetórias internas priorizadas)")
-    elif use_weighted_loss:
+    if use_weighted_loss:
         print(f"\n  Estratégia utilizada: Weighted Loss (trajetórias internas priorizadas)")
     
     fig.show()
