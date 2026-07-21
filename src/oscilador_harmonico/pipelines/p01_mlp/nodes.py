@@ -11,7 +11,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
@@ -20,6 +20,8 @@ from .model import MLP
 from oscilador_harmonico.utils import (
     CORES_PALETA,
     cria_grafico_real_previsto_mlp,
+    cria_grafico_distribuicao_amplitudes,
+    cria_grafico_pesos_por_amplitude,
     cria_grafico_distribuicao_dados,
     cria_grafico_historico_treinamento,
     cria_grafico_previsoes_espaco_fases,
@@ -55,6 +57,10 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     
     O tempo é usado apenas para organizar os pontos da trajetória,
     mas não é uma feature de entrada.
+    
+    A divisão dos dados é feita considerando apenas as trajetórias mais internas
+    no espaço de fases (menor amplitude). As trajetórias externas são separadas
+    para avaliação posterior.
     """
     
     for col in base_oscilador.columns:
@@ -75,6 +81,8 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         base_oscilador = base_oscilador.dropna(subset=['x0', 'v0'])
     
     frequencia_angular_unica = base_oscilador['frequencia_angular'].iloc[0] if len(base_oscilador) > 0 else 5.0
+    omega = frequencia_angular_unica
+    
     print(f"\n=== BASE DE DADOS ===")
     print(f"  Frequência angular do sistema: {frequencia_angular_unica} rad/s")
     print(f"  Total de linhas da base: {len(base_oscilador)}")
@@ -104,11 +112,47 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     
     print(f"\n=== PREPARAÇÃO DOS DADOS ===")
     
+    # ============================================
+    # SELEÇÃO DAS TRAJETÓRIAS MAIS INTERNAS
+    # ============================================
+    
+    # calcula amplitude para cada trajetória
+    amplitudes = {}
+    for traj_id in trajetorias_unicas:
+        grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+        x0 = grupo['x0']
+        v0 = grupo['v0']
+        amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
+        amplitudes[traj_id] = amplitude
+    
+    # ordena trajetórias por amplitude (internas primeiro)
+    trajetorias_ordenadas = sorted(amplitudes.items(), key=lambda x: x[1])
+    trajetorias_ids_ordenadas = [t[0] for t in trajetorias_ordenadas]
+    amplitudes_ordenadas = [t[1] for t in trajetorias_ordenadas]
+    
+    # seleciona apenas as 70% mais internas para treino/validação/teste
+    n_traj = len(trajetorias_ids_ordenadas)
+    n_internas = int(0.7 * n_traj)
+    trajetorias_internas = trajetorias_ids_ordenadas[:n_internas]
+    trajetorias_externas = trajetorias_ids_ordenadas[n_internas:]
+    
+    amplitude_limite_internas = amplitudes_ordenadas[n_internas - 1] if n_internas > 0 else 0
+    
+    print(f"\n  Trajetórias internas: {len(trajetorias_internas)} trajetórias")
+    print(f"    Amplitude ≤ {amplitude_limite_internas:.4f} m")
+    print(f"  Trajetórias externas: {len(trajetorias_externas)} trajetórias")
+    print(f"    Amplitude > {amplitude_limite_internas:.4f} m")
+    
+    # =========================================================
+    # DIVISÃO DOS DADOS (APENAS TRAJETÓRIAS INTERNAS)
+    # =========================================================
+    
     X_list = []  # [x0, v0] para cada trajetória
     y_list = []  # trajetória completa intercalada para cada trajetória
     tempos_list = []  # tempos para referência
+    trajetorias_internas_list = []  # lista para manter rastreamento
     
-    for traj_id in trajetorias_unicas:
+    for traj_id in trajetorias_internas:
         grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].sort_values('tempo')
         
         # verifica se todos os pontos estão presentes
@@ -129,17 +173,18 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         
         # tempos para referência
         tempos_list.append(grupo['tempo'].values)
+        trajetorias_internas_list.append(traj_id)
     
     X_raw = np.array(X_list, dtype=np.float32)
     y_raw = np.array(y_list, dtype=np.float32)
-    tempos_referencia = np.array(tempos_list[0])
+    tempos_referencia = np.array(tempos_list[0]) if tempos_list else np.array([])
     
-    print(f"  Trajetórias únicas: {len(X_raw)}")
+    print(f"\n  Trajetórias internas válidas: {len(X_raw)}")
     print(f"  Dimensão entrada: {X_raw.shape[1]} (x0, v0)")
     print(f"  Dimensão saída: {y_raw.shape[1]} (2N)")
     print(f"  Nós de saída do modelo por trajetória: {num_timesteps}")
     
-    # treino, validação e teste (70-20-10)
+    # treino, validação e teste (70-20-10) - apenas trajetórias internas
     n_trajetorias = len(X_raw)
     indices = np.random.permutation(n_trajetorias)
     n_train = int(0.7 * n_trajetorias)
@@ -155,6 +200,10 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     y_val = y_raw[val_indices]
     X_test = X_raw[test_indices]
     y_test = y_raw[test_indices]
+    
+    trajetorias_train = np.array(trajetorias_internas_list)[train_indices]
+    trajetorias_val = np.array(trajetorias_internas_list)[val_indices]
+    trajetorias_test = np.array(trajetorias_internas_list)[test_indices]
     
     print(f"\n  Trajetórias de treino: {len(X_train)}")
     print(f"  Trajetórias de validação: {len(X_val)}")
@@ -186,9 +235,7 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
             X_scaled_val, y_scaled_val, 
             X_scaled_test, y_scaled_test, 
             input_dim, output_dim, scaler_X, scaler_y,
-            trajetorias_unicas[train_indices], 
-            trajetorias_unicas[val_indices], 
-            trajetorias_unicas[test_indices],
+            trajetorias_train, trajetorias_val, trajetorias_test,
             num_timesteps, tempos_referencia)
 
 
@@ -201,17 +248,22 @@ def visualiza_distribuicao_dados_separado(
     Carrega os dados novamente e faz a divisão por trajetória apenas para visualização.
     Não interfere no pipeline principal de treinamento.
     
+    Agora considera apenas as trajetórias mais internas (70%) para a divisão,
+    mantendo as externas separadas para visualização.
+    
     Args:
         base_oscilador: DataFrame com a base consolidada
         parameters: Parâmetros do pipeline
     """
     
     data_version = parameters.get('data_version', 'default_v1')
+    omega = parameters.get('intervals', {}).get('omega', 5.0)
     
     output_dir = f"data/08_reporting/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_distribuicao_dados = f"{output_dir}/distribuicao_dados.html"
+    grafico_distribuicao_amplitudes = f"{output_dir}/distribuicao_amplitudes.html"
     
     base_oscilador = base_oscilador[base_oscilador['sistema_id'] == 0].copy()
     
@@ -225,13 +277,70 @@ def visualiza_distribuicao_dados_separado(
     # obtém lista única de trajetórias
     trajetorias_unicas = base_oscilador['id_trajetoria'].unique()
     
-    # divide as trajetórias em treino, validação e teste (70-20-10)
+    # ============================================
+    # CÁLCULO DAS AMPLITUDES
+    # ============================================
+    
+    # calcula amplitude para cada trajetória
+    amplitudes = {}
+    for traj_id in trajetorias_unicas:
+        grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+        x0 = grupo['x0']
+        v0 = grupo['v0']
+        amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
+        amplitudes[traj_id] = amplitude
+    
+    # ordena de forma ascendente as trajetórias por amplitude
+    trajetorias_ordenadas = sorted(amplitudes.items(), key=lambda x: x[1])
+    trajetorias_ids_ordenadas = [t[0] for t in trajetorias_ordenadas]
+    amplitudes_ordenadas = [t[1] for t in trajetorias_ordenadas]
+    
+    # seleciona apenas as 70% mais internas
+    n_traj = len(trajetorias_ids_ordenadas)
+    n_internas = int(0.7 * n_traj)
+    trajetorias_internas = trajetorias_ids_ordenadas[:n_internas]
+    trajetorias_externas = trajetorias_ids_ordenadas[n_internas:]
+    
+    amplitude_limite_internas = amplitudes_ordenadas[n_internas - 1] if n_internas > 0 else 0
+    
+    print(f"\n=== DISTRIBUIÇÃO DAS TRAJETÓRIAS POR AMPLITUDE ===")
+    print(f"  Amplitude mínima: {amplitudes_ordenadas[0]:.4f} m")
+    print(f"  Amplitude máxima: {amplitudes_ordenadas[-1]:.4f} m")
+    print(f"  Amplitude mediana: {amplitudes_ordenadas[n_traj//2]:.4f} m")
+    print(f"  Amplitude limite trajetórias internas: {amplitude_limite_internas:.4f} m")
+    print(f"\n  Trajetórias internas: {len(trajetorias_internas)} trajetórias")
+    print(f"  Trajetórias externas: {len(trajetorias_externas)} trajetórias")
+    
+    # ============================================
+    # GRÁFICO: Distribuição das Amplitudes
+    # ============================================
+    
+    fig_amp = cria_grafico_distribuicao_amplitudes(
+        amplitudes=np.array(amplitudes_ordenadas),
+        amplitude_limite_internas=amplitude_limite_internas,
+        omega=omega,
+        titulo="Distribuição das Amplitudes das Trajetórias"
+    )
+    
+    fig_amp.write_html(grafico_distribuicao_amplitudes)
+    fig_amp.show()
+    
+    # ========================================================
+    # DIVISÃO DOS DADOS (APENAS TRAJETÓRIAS INTERNAS)
+    # ========================================================
+    
+    # divide as trajetórias internas em treino, validação e teste (70-20-10)
     trajetorias_train, trajetorias_temp = train_test_split(
-        trajetorias_unicas, test_size=0.30, random_state=42
+        trajetorias_internas, test_size=0.30, random_state=42
     )
     trajetorias_val, trajetorias_test = train_test_split(
         trajetorias_temp, test_size=0.3333, random_state=42
     )
+    
+    print(f"\n=== DIVISÃO DOS DADOS INTERNOS ===")
+    print(f"  Trajetórias de treino: {len(trajetorias_train)}")
+    print(f"  Trajetórias de validação: {len(trajetorias_val)}")
+    print(f"  Trajetórias de teste: {len(trajetorias_test)}")
         
     # seleciona os dados de cada conjunto baseado nas trajetórias
     dados_train = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_train)]
@@ -245,6 +354,10 @@ def visualiza_distribuicao_dados_separado(
     y_pos_test = dados_test['posicao'].values.astype(np.float32).reshape(-1, 1)
     y_vel_test = dados_test['velocidade'].values.astype(np.float32).reshape(-1, 1)
     
+    # ============================================
+    # GRÁFICO: Distribuição no Espaço de Fases
+    # ============================================
+    
     fig = cria_grafico_distribuicao_dados(
         y_pos_train=y_pos_train,
         y_vel_train=y_vel_train,
@@ -252,11 +365,10 @@ def visualiza_distribuicao_dados_separado(
         y_vel_val=y_vel_val,
         y_pos_test=y_pos_test,
         y_vel_test=y_vel_test,
-        titulo="Distribuição dos Dados - Espaço de Fases (Por Trajetória)"
+        titulo="Distribuição dos Dados no Espaço de Fases - Apenas Trajetórias Internas (70%)"
     )
     
-    fig.write_html(grafico_distribuicao_dados)
-    
+    fig.write_html(grafico_distribuicao_dados) 
     fig.show()
     
     return None
@@ -297,9 +409,15 @@ def treina_mlp_node(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    base_oscilador: pd.DataFrame = None,
+    trajetorias_train: np.ndarray = None
 ) -> Tuple[nn.Module, Dict]:
-    """Treina o modelo MLP para prever trajetórias completas."""
+    """Treina o modelo MLP para prever trajetórias completas.
+    
+    Se base_oscilador e trajetorias_train forem fornecidos, aplica pesos
+    inversos à amplitude para dar mais importância às trajetórias internas.
+    """
 
     mlp_config = parameters.get('mlp', {})
     
@@ -310,17 +428,70 @@ def treina_mlp_node(
     
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
+    omega = parameters.get('intervals', {}).get('omega', 5.0)
     
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_historico_loss = f"{output_dir}/historico_treinamento_loss.html"
+    grafico_pesos = f"{output_dir}/distribuicao_pesos_treino.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Dispositivo: {device}")
     
     model = model.to(device)
+
+    use_weighted_sampling = False
+    sampler = None
     
+    if base_oscilador is not None and trajetorias_train is not None:
+        # calcula amplitude para cada trajetória de treino
+        amplitudes = {}
+        for traj_id in trajetorias_train:
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+            x0 = grupo['x0']
+            v0 = grupo['v0']
+            amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
+            amplitudes[traj_id] = amplitude
+        
+        amplitudes_array = np.array(list(amplitudes.values()))
+
+        amplitude_min = amplitudes_array.min()
+        amplitude_max = amplitudes_array.max()
+        amplitudes_norm = (amplitudes_array - amplitude_min) / (amplitude_max - amplitude_min + 1e-8)
+        pesos_trajetorias = 1.0 / (amplitudes_norm + 0.01)
+        
+        print("\n=== DISTRIBUIÇÃO DOS PESOS POR AMPLITUDE ===")
+        print(f"  Amplitude mínima: {amplitudes_array.min():.4f} m")
+        print(f"  Amplitude máxima: {amplitudes_array.max():.4f} m")
+        print(f"  Peso médio: {pesos_trajetorias.mean():.4f}")
+        print(f"  Peso mínimo: {pesos_trajetorias.min():.4f}")
+        print(f"  Peso máximo: {pesos_trajetorias.max():.4f}")
+                
+        fig_pesos = cria_grafico_pesos_por_amplitude(
+            amplitudes=amplitudes_array,
+            pesos=pesos_trajetorias,
+            omega=omega,
+            titulo="Distribuição dos Pesos por Amplitude"
+        )
+        
+        fig_pesos.write_html(grafico_pesos)
+        fig_pesos.show()
+        
+        use_weighted_sampling = True
+        traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
+        weights = np.array([traj_peso_map[traj_id] for traj_id in trajetorias_train], dtype=np.float64)
+        
+        # normaliza os pesos para somar 1
+        weights = weights / weights.sum()
+        
+        print(f"\n  Weighted Sampling: {len(weights)} trajetórias com pesos")
+        print(f"    Peso médio: {weights.mean():.6f}")
+        print(f"    Peso mínimo: {weights.min():.6f}")
+        print(f"    Peso máximo: {weights.max():.6f}")
+
+        sampler = WeightedRandomSampler(weights, len(weights), replacement=True)
+        
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
@@ -329,7 +500,15 @@ def treina_mlp_node(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # configura o dataloader com ou sem amostragem ponderada
+    if use_weighted_sampling and sampler is not None:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+        print(f"\n  Usando WeightedRandomSampler para balancear trajetórias internas")
+        print(f"    Número de trajetórias: {len(weights)}")
+        print(f"    Batch size: {batch_size}")
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     criterion = nn.MSELoss()
@@ -347,6 +526,10 @@ def treina_mlp_node(
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
+    
+    if use_weighted_sampling:
+        print(f"  Estratégia: Weighted Sampling (pesos inversos à amplitude)")
+        print(f"    Trajetórias internas têm maior probabilidade de serem amostradas")
     
     for epoch in range(epochs):
         # treino
@@ -387,14 +570,14 @@ def treina_mlp_node(
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
-    
-    # ============================================
-    # GRÁFICO: Histórico de Treinamento
-    # ============================================
+        
+    titulo_historico = "Evolução da Função de Custo durante o Treinamento do MLP"
+    if use_weighted_sampling:
+        titulo_historico += " (Weighted Sampling)"
     
     fig = cria_grafico_historico_treinamento(
         history=history,
-        titulo="Evolução da Função de Custo durante o Treinamento do MLP"
+        titulo=titulo_historico
     )
     
     fig.write_html(grafico_historico_loss)
@@ -402,6 +585,9 @@ def treina_mlp_node(
     print(f"\n=== TREINAMENTO CONCLUÍDO ===")
     print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
     print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
+    
+    if use_weighted_sampling:
+        print(f"\n  Estratégia utilizada: Weighted Sampling (trajetórias internas priorizadas)")
     
     fig.show()
     
@@ -489,8 +675,7 @@ def visualiza_previsoes_mlp_node(
     X_test: np.ndarray,
     y_test: np.ndarray,
     scaler_y: StandardScaler,
-    parameters: Dict[str, Any],
-    tempos_referencia: np.ndarray
+    parameters: Dict[str, Any]
 ) -> None:
     """
     Visualiza as previsões do modelo MLP nos dados de teste.
@@ -506,6 +691,7 @@ def visualiza_previsoes_mlp_node(
     """
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
+    seed = parameters.get('seed', 42)
     
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
@@ -525,9 +711,11 @@ def visualiza_previsoes_mlp_node(
     predictions = scaler_y.inverse_transform(predictions_scaled)
     y_test_original = scaler_y.inverse_transform(y_test)
     
+    rng = np.random.RandomState(seed)
+    
     # separa algumas trajetórias para visualização
     num_trajetorias_vis = min(5, len(predictions))
-    indices_vis = np.random.choice(len(predictions), num_trajetorias_vis, replace=False)
+    indices_vis = rng.choice(len(predictions), num_trajetorias_vis, replace=False)
     
     # dados para visualização ponto a ponto
     predictions_flat = []
@@ -586,7 +774,8 @@ def visualiza_previsoes_espaco_fases_node(
     
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'default_v1')
-    
+    seed = parameters.get('seed', 42)
+
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
@@ -609,9 +798,11 @@ def visualiza_previsoes_espaco_fases_node(
     predictions = scaler_y.inverse_transform(predictions_scaled)
     y_test_original = scaler_y.inverse_transform(y_test)
     
+    rng = np.random.RandomState(seed)
+    
     # seleciona algumas trajetórias para visualização
     num_trajetorias_vis = min(10, len(predictions))
-    indices_vis = np.random.choice(len(predictions), num_trajetorias_vis, replace=False)
+    indices_vis = rng.choice(len(predictions), num_trajetorias_vis, replace=False)
     
     # dados para o gráfico de espaço de fases
     y_pos_true_list = []

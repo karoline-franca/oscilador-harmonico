@@ -53,7 +53,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         
         node(
             func=gera_base_consolidada_node,
-            inputs=["solucao_rk4", "condicoes_iniciais", "frequencias_angulares", "metadata_simulacao"],
+            inputs=["solucao_rk4", "frequencias_angulares"],
             outputs="base_oscilador",
             name="node_gera_base_consolidada",
             tags=["data", "database"]

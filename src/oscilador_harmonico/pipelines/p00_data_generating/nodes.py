@@ -10,9 +10,9 @@ import os
 from datetime import datetime
 from typing import Dict, Any, Tuple
 
-from oscilador_harmonico.utils import CORES_PALETA, formatar_numero_pt_br
 from .oscillator import OsciladorHarmonicoPyTorch 
 
+import plotly.graph_objects as go
 
 def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -142,9 +142,7 @@ def executa_simulacao_rk4_node(
 
 def gera_base_consolidada_node(
     solucao: Dict[str, Any],
-    condicoes_iniciais: pd.DataFrame,
     frequencias_angulares: pd.DataFrame,
-    metadados: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Node: Constrói a base de dados consolidada.
@@ -213,24 +211,22 @@ def cria_visualizacoes_node(
     
     if fig3d is not None:
         fig3d.write_html(grafico_3d_path)
-        print(f"Gráfico 3D salvo em {grafico_3d_path}")
+
     else:
         print("ERRO: fig3d é None")
-        import plotly.graph_objects as go
         fig3d = go.Figure()
         fig3d.update_layout(title="Erro ao gerar gráfico 3D")
         fig3d.write_html(grafico_3d_path)
     
     if fig2d is not None:
         fig2d.write_html(grafico_2d_path)
-        print(f"Gráfico 2D salvo em {grafico_2d_path}")
     else:
         print("ERRO: fig2d é None")
-        import plotly.graph_objects as go
         fig2d = go.Figure()
         fig2d.update_layout(title="Erro ao gerar gráfico 2D")
         fig2d.write_html(grafico_2d_path)
     
     fig2d.show()
     fig3d.show()
+
     return None

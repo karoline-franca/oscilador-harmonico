@@ -52,7 +52,8 @@ def create_pipeline(**kwargs) -> Pipeline:
         
         node(
             func=treina_mlp_node,
-            inputs=["modelo_mlp", "X_train", "y_train", "X_val", "y_val", "parameters"],
+            inputs=["modelo_mlp", "X_train", "y_train", "X_val", "y_val", "parameters", 
+                    "base_oscilador", "trajetorias_train"],
             outputs=["modelo_mlp_treinado", "history_mlp"],
             name="node_treina_mlp",
         ),
@@ -66,7 +67,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         
         node(
             func=visualiza_previsoes_mlp_node,
-            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_y", "parameters", "tempos_referencia"],
+            inputs=["modelo_mlp_treinado", "X_test", "y_test", "scaler_y", "parameters"],
             outputs=None,
             name="node_visualiza_previsoes_mlp",
         ),

@@ -242,6 +242,248 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     return fig
 
 
+def cria_grafico_distribuicao_amplitudes(
+    amplitudes: np.ndarray,
+    amplitude_limite_internas: float = None,
+    omega: float = 5.0,
+    titulo: str = "Distribuição das Amplitudes das Trajetórias"
+) -> go.Figure:
+    """
+    Cria gráfico da distribuição das amplitudes das trajetórias no espaço de fases.
+    
+    Args:
+        amplitudes: Array com as amplitudes calculadas para cada trajetória
+        amplitude_limite_internas: Valor limite que separa trajetórias internas e externas (opcional)
+        omega: Frequência angular do sistema (para informação no título)
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    
+    fig = go.Figure()
+    
+    # histograma das amplitudes
+    fig.add_trace(go.Histogram(
+        x=amplitudes,
+        nbinsx=30,
+        name='Distribuição das Amplitudes',
+        marker=dict(color='#1565C0', opacity=0.7),
+        hovertemplate='Amplitude: %{x:.4f} m<br>Frequência: %{y}<extra></extra>'
+    ))
+    
+    if amplitude_limite_internas is not None:
+        # linha vertical para o limite das trajetórias internas
+        fig.add_vline(
+            x=amplitude_limite_internas, 
+            line_dash="dash", 
+            line_color="red",
+            annotation_text=f"Limite Trajetórias Internas/Externas",
+            annotation_position="top"
+        )
+        
+        # áreas sombreadas
+        fig.add_vrect(
+            x0=amplitudes.min(),
+            x1=amplitude_limite_internas,
+            fillcolor="green",
+            opacity=0.1,
+            layer="below",
+            line_width=0,
+        )
+        fig.add_vrect(
+            x0=amplitude_limite_internas,
+            x1=amplitudes.max(),
+            fillcolor="red",
+            opacity=0.1,
+            layer="below",
+            line_width=0,
+        )
+    
+    amplitude_min = amplitudes.min()
+    amplitude_max = amplitudes.max()
+    amplitude_mediana = np.median(amplitudes)
+    
+    # contagem de trajetórias internas e externas
+    if amplitude_limite_internas is not None:
+        n_internas = np.sum(amplitudes <= amplitude_limite_internas)
+        n_externas = np.sum(amplitudes > amplitude_limite_internas)
+        texto_estatisticas = (
+            f"<sup>Total: {len(amplitudes)} trajetórias | "
+            f"Internas: {n_internas} | "
+            f"Externas: {n_externas} | "
+            f"ω = {omega} rad/s</sup>"
+        )
+    else:
+        texto_estatisticas = (
+            f"<sup>Total: {len(amplitudes)} trajetórias | "
+            f"Amplitude Mín: {amplitude_min:.4f} m | "
+            f"Amplitude Máx: {amplitude_max:.4f} m | "
+            f"Mediana: {amplitude_mediana:.4f} m | "
+            f"ω = {omega} rad/s</sup>"
+        )
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
+                 texto_estatisticas,
+            x=0.5,
+            y=0.95,
+            font=dict(size=16)
+        ),
+        xaxis_title="Amplitude (m)",
+        yaxis_title="Frequência",
+        width=1200,
+        height=700,
+        legend=dict(
+            title="Legenda",
+            x=0.85,
+            y=0.95,
+            bgcolor='rgba(255, 255, 255, 0.95)',
+            bordercolor='gray',
+            borderwidth=1,
+            font=dict(size=14)
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150, b=80, l=80, r=80),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14)
+        )
+    )
+    
+    return fig
+
+
+def cria_grafico_pesos_por_amplitude(
+    amplitudes: np.ndarray,
+    pesos: np.ndarray,
+    omega: float = 5.0,
+    titulo: str = "Distribuição dos Pesos por Amplitude"
+) -> go.Figure:
+    """
+    Cria gráfico da relação entre pesos e amplitudes das trajetórias.
+    
+    Args:
+        amplitudes: Array com as amplitudes das trajetórias
+        pesos: Array com os pesos atribuídos a cada trajetória
+        omega: Frequência angular do sistema (para informação no título)
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=amplitudes,
+        y=pesos,
+        mode='markers',
+        name='Peso vs Amplitude',
+        marker=dict(
+            color=pesos,
+            colorscale='Viridis',
+            size=10,
+            showscale=True,
+            colorbar=dict(title="Peso")
+        ),
+        hovertemplate=(
+            f"<b>Trajetória</b><br>" +
+            f"Amplitude: %{{x:.4f}} m<br>" +
+            f"Peso: %{{y:.4f}}<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    # linha de tendência
+    z = np.polyfit(amplitudes, pesos, 1)
+    p = np.poly1d(z)
+    x_trend = np.linspace(amplitudes.min(), amplitudes.max(), 100)
+    y_trend = p(x_trend)
+    
+    fig.add_trace(go.Scatter(
+        x=x_trend,
+        y=y_trend,
+        mode='lines',
+        name='Tendência',
+        line=dict(color='red', width=2, dash='dash'),
+        hovertemplate='Tendência: %{y:.4f}<extra></extra>'
+    ))
+    
+    # estatísticas
+    peso_medio = pesos.mean()
+    peso_min = pesos.min()
+    peso_max = pesos.max()
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            x=0.5,
+            y=0.95,
+            font=dict(size=16)
+        ),
+        xaxis_title="Amplitude (m)",
+        yaxis_title="Peso",
+        width=1200,
+        height=700,
+        legend=dict(
+            title="Legenda",
+            x=0.85,
+            y=0.95,
+            bgcolor='rgba(255, 255, 255, 0.95)',
+            bordercolor='gray',
+            borderwidth=1,
+            font=dict(size=14)
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(t=150, b=80, l=80, r=80),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='lightgray',
+            gridwidth=0.5,
+            zeroline=True,
+            zerolinecolor='lightgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=14)
+        )
+    )
+    
+    return fig
+
+
 def cria_grafico_historico_treinamento(
     history: Dict,
     titulo: str = "Evolução da Função de Custo durante o Treinamento"
@@ -282,7 +524,7 @@ def cria_grafico_historico_treinamento(
         y=history['val_loss'],
         mode='lines',
         name='Loss de Validação',
-        line=dict(color='#B71C1C', width=2, dash='dash'),
+        line=dict(color='#B71C1C', width=2),
         hovertemplate=(
             f"<b>Loss de Validação</b><br>" +
             f"Época: %{{x}}<br>" +
@@ -290,10 +532,7 @@ def cria_grafico_historico_treinamento(
             f"<extra></extra>"
         )
     ))
-    
-    train_loss_final = history['train_loss'][-1] if history['train_loss'] else 0
-    val_loss_final = history['val_loss'][-1] if history['val_loss'] else 0
-    
+        
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
