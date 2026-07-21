@@ -52,8 +52,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         
         node(
             func=treina_mlp_node,
-            inputs=["modelo_mlp", "X_train", "y_train", "X_val", "y_val", "parameters", 
-                    "base_oscilador", "trajetorias_train"],
+            inputs=["modelo_mlp", "X_train", "y_train", "X_val", "y_val", "parameters"],
             outputs=["modelo_mlp_treinado", "history_mlp"],
             name="node_treina_mlp",
         ),
