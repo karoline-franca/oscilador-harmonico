@@ -1,5 +1,5 @@
 """
-Utilitários para o pipeline do oscilador harmônico.
+Utilitários para o pipeline do oscilador de Lotka-Volterra.
 """
 
 import numpy as np
@@ -28,6 +28,9 @@ def formatar_numero_pt_br(numero):
 def cria_grafico_3d(solucao, sistemas_descricao):
     """
     Cria visualização 3D com todas as trajetórias de todos os sistemas no espaço de fases
+    para o oscilador de Lotka-Volterra.
+    
+    Espaço de fases: (presas, predadores, tempo)
     """
     fig = go.Figure()
     
@@ -36,31 +39,39 @@ def cria_grafico_3d(solucao, sistemas_descricao):
         
     for i_sistema in range(n_sistemas):
         cor = CORES_PALETA[i_sistema % len(CORES_PALETA)]
-        freq = solucao['frequencias_lineares'][i_sistema]
+        a = solucao['taxas_crescimento'][i_sistema]
+        b = solucao['taxas_predacao'][i_sistema]
+        c = solucao['taxas_mortalidade'][i_sistema]
+        d = solucao['taxas_eficiencia'][i_sistema]
         omega = solucao['frequencias_angulares'][i_sistema]
+        periodo = solucao['periodos'][i_sistema]
         
         for i_cond in range(n_condicoes):
-            x0, v0 = solucao['condicoes_iniciais'][i_cond]
-            amplitude = solucao['amplitudes'][i_cond, i_sistema]
-            energia_total = solucao['energia_mecanica'][-1, i_cond, i_sistema]
+            x0, y0 = solucao['condicoes_iniciais'][i_cond]
+            amp_x = solucao['amplitudes_presas'][i_cond, i_sistema]
+            amp_y = solucao['amplitudes_predadores'][i_cond, i_sistema]
+            H = solucao['constante_movimento'][-1, i_cond, i_sistema]
             
             rotulo = (f"<b>{sistemas_descricao[i_sistema]}</b><br>" +
-                     f"f = {freq:.3f} Hz<br>" +
-                     f"T = {1.0/freq:.3f} s<br>" +
-                     f"x₀ = {x0:.3f} m, v₀ = {v0:.3f} m/s<br>" +
-                     f"A = {amplitude:.3f} m<br>" +
-                     f"E = {energia_total:.3f} J/kg")
+                     f"a = {a:.3f} (crescimento presas)<br>" +
+                     f"c = {c:.3f} (mortalidade predadores)<br>" +
+                     f"b = {b:.3f} (predação)<br>" +
+                     f"d = {d:.3f} (eficiência)<br>" +
+                     f"T ≈ {periodo:.3f} s<br>" +
+                     f"x₀ = {x0:.3f}, y₀ = {y0:.3f}<br>" +
+                     f"A_x = {amp_x:.3f}, A_y = {amp_y:.3f}<br>" +
+                     f"H = {H:.3f}")
             
             if i_cond == 0:
-                nome = f"Sistema {i_sistema}: ω={omega:.3f} rad/s"
+                nome = f"Sistema {i_sistema}: ω≈{omega:.3f} rad/s"
                 show_legend = True
             else:
                 nome = f"Traj_S{i_sistema}_C{i_cond}"
                 show_legend = False
             
             fig.add_trace(go.Scatter3d(
-                x=solucao['posicao'][:, i_cond, i_sistema],
-                y=solucao['velocidade'][:, i_cond, i_sistema],
+                x=solucao['presas'][:, i_cond, i_sistema],
+                y=solucao['predadores'][:, i_cond, i_sistema],
                 z=solucao['tempo'],
                 mode='lines',
                 line=dict(color=cor, width=1.5),
@@ -68,18 +79,24 @@ def cria_grafico_3d(solucao, sistemas_descricao):
                 legendgroup=f'sistema_{i_sistema}',
                 showlegend=show_legend,
                 opacity=0.9,
-                hovertemplate=rotulo + '<br>Posição: %{x:.3f} m<br>Velocidade: %{y:.3f} m/s<br>Tempo: %{z:.3f} s<extra></extra>'
+                hovertemplate=rotulo + '<br>Presas: %{x:.3f}<br>Predadores: %{y:.3f}<br>Tempo: %{z:.3f} s<extra></extra>'
             ))
     
     fig.update_layout(
-        title=(
-            "Espaço de Fases 3D<br>" +
-            f"<sup> Nro de sistemas: {n_sistemas} | "
-            f"Nro de condições iniciais por sistema: {n_condicoes} | Total de {n_sistemas * n_condicoes} trajetórias</sup>"
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 3D - Oscilador de Lotka-Volterra</span><br><br>" +
+                 f"<span style='font-size:18px; color:#555555;'>" +
+                 f"Nro de sistemas: {n_sistemas} | " +
+                 f"Nro de condições iniciais por sistema: {n_condicoes} | " +
+                 f"Total de {n_sistemas * n_condicoes} trajetórias</span>",
+            x=0.5,
+            y=0.95,
+            font=dict(size=16)
         ),
+
         scene=dict(
-            xaxis_title="Posição (m)",
-            yaxis_title="Velocidade (m/s)",
+            xaxis_title="Presas (x)",
+            yaxis_title="Predadores (y)",
             zaxis_title="Tempo (s)",
             camera=dict(
                 eye=dict(x=1.5, y=1.5, z=1.2),
@@ -111,7 +128,10 @@ def cria_grafico_3d(solucao, sistemas_descricao):
 
 def cria_grafico_2d(solucao, sistemas_descricao):
     """
-    Cria um único gráfico 2D com todas as trajetórias de todos os sistemas no espaço de fases.
+    Cria um único gráfico 2D com todas as trajetórias de todos os sistemas no espaço de fases
+    para o oscilador de Lotka-Volterra.
+    
+    Espaço de fases: (presas, predadores)
     Os pontos das condições iniciais são destacados em preto.
     """
     fig = go.Figure()
@@ -121,28 +141,35 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     
     for i_sistema in range(n_sistemas):
         cor = CORES_PALETA[i_sistema % len(CORES_PALETA)]
-        freq = solucao['frequencias_lineares'][i_sistema]
+        a = solucao['taxas_crescimento'][i_sistema]
+        b = solucao['taxas_predacao'][i_sistema]
+        c = solucao['taxas_mortalidade'][i_sistema]
+        d = solucao['taxas_eficiencia'][i_sistema]
         omega = solucao['frequencias_angulares'][i_sistema]
+        x_eq = solucao['presas_eq'][i_sistema]
+        y_eq = solucao['predadores_eq'][i_sistema]
         x0_list = []
-        v0_list = []
+        y0_list = []
         
         for i_cond in range(n_condicoes):
-            x0, v0 = solucao['condicoes_iniciais'][i_cond]
-            amplitude = solucao['amplitudes'][i_cond, i_sistema]
+            x0, y0 = solucao['condicoes_iniciais'][i_cond]
+            amp_x = solucao['amplitudes_presas'][i_cond, i_sistema]
+            amp_y = solucao['amplitudes_predadores'][i_cond, i_sistema]
+            H = solucao['constante_movimento'][-1, i_cond, i_sistema]
             x0_list.append(x0)
-            v0_list.append(v0)
+            y0_list.append(y0)
             
             # cria nome legível para a legenda (mostra apenas o primeiro de cada sistema)
             if i_cond == 0:  # mostra apenas um item por sistema na legenda
-                nome = f"Sistema {i_sistema}: ω={omega:.3f} rad/s"
+                nome = f"Sistema {i_sistema}: ω≈{omega:.3f} rad/s"
                 show_legend = True
             else:
                 nome = f"Traj_S{i_sistema}_C{i_cond}"
                 show_legend = False
             
             fig.add_trace(go.Scatter(
-                x=solucao['posicao'][:, i_cond, i_sistema],
-                y=solucao['velocidade'][:, i_cond, i_sistema],
+                x=solucao['presas'][:, i_cond, i_sistema],
+                y=solucao['predadores'][:, i_cond, i_sistema],
                 mode='lines',
                 line=dict(color=cor, width=1.0),
                 name=nome,
@@ -151,33 +178,57 @@ def cria_grafico_2d(solucao, sistemas_descricao):
                 opacity=0.8,
                 hovertemplate=(
                     f"<b>{sistemas_descricao[i_sistema]}</b><br>" +
-                    f"f = {freq:.3f} Hz<br>" +
-                    f"T = {1.0/freq:.3f} s<br>" +
-                    f"x₀ = {x0:.3f} m, v₀ = {v0:.3f} m/s<br>" +
-                    f"A = {amplitude:.3f} m<br>" +
-                    f"Posição: %{{x:.3f}} m<br>" +
-                    f"Velocidade: %{{y:.3f}} m/s<br>" +
+                    f"a = {a:.3f}, b = {b:.3f}<br>" +
+                    f"c = {c:.3f}, d = {d:.3f}<br>" +
+                    f"x* = {x_eq:.3f}, y* = {y_eq:.3f}<br>" +
+                    f"x₀ = {x0:.3f}, y₀ = {y0:.3f}<br>" +
+                    f"A_x = {amp_x:.3f}, A_y = {amp_y:.3f}<br>" +
+                    f"H = {H:.3f}<br>" +
+                    f"Presas: %{{x:.3f}}<br>" +
+                    f"Predadores: %{{y:.3f}}<br>" +
                     f"<extra></extra>"
                 )
             ))
         
+        # ponto de equilíbrio
         fig.add_trace(go.Scatter(
-            x=x0_list,
-            y=v0_list,
+            x=[x_eq],
+            y=[y_eq],
             mode='markers',
             marker=dict(
-                color='black',
+                color='orange',
                 size=8,
                 symbol='circle',
-                line=dict(color='white', width=1)
+                line=dict(color='orange', width=1)
+            ),
+            name=f'Equilíbrio - Sistema {i_sistema}',
+            legendgroup=f'sistema_{i_sistema}',
+            showlegend=False,
+            hovertemplate=(
+                f"<b>Ponto de Equilíbrio - {sistemas_descricao[i_sistema]}</b><br>" +
+                f"x* = {x_eq:.3f}<br>" +
+                f"y* = {y_eq:.3f}<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=x0_list,
+            y=y0_list,
+            mode='markers',
+            marker=dict(
+                color='blue',
+                size=8,
+                symbol='circle',
+                line=dict(color='blue', width=1)
             ),
             name=f'Condições Iniciais - Sistema {i_sistema}',
             legendgroup=f'sistema_{i_sistema}',
             showlegend=False,
             hovertemplate=(
                 f"<b>Condição Inicial - {sistemas_descricao[i_sistema]}</b><br>" +
-                f"x₀ = %{{x:.3f}} m<br>" +
-                f"v₀ = %{{y:.3f}} m/s<br>" +
+                f"x₀ = %{{x:.3f}}<br>" +
+                f"y₀ = %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
@@ -185,58 +236,66 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     fig.add_trace(go.Scatter(
         x=[None], y=[None],
         mode='markers',
-        marker=dict(color='black', size=8, symbol='circle', line=dict(color='white', width=1)),
+        marker=dict(color='blue', size=8, symbol='circle', line=dict(color='blue', width=1)),
         name='Condições Iniciais',
         showlegend=True
     ))
     
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(color='orange', size=8, symbol='circle', line=dict(color='orange', width=1)),
+        name='Pontos de Equilíbrio',
+        showlegend=True
+    ))
+    
     fig.update_layout(
-        title=(
-            "Espaço de Fases 2D<br>" +
-            f"<sup>Nro de sistemas: {n_sistemas} | "
-            f"Nro de condições iniciais por sistema: {n_condicoes} | Total de {n_sistemas * n_condicoes} trajetórias</sup>"
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 2D - Oscilador de Lotka-Volterra</span><br><br>" +
+                 f"<span style='font-size:18px; color:#555555;'>" +
+                 f"Nro. de sistemas: {n_sistemas} | " +
+                 f"Nro. de condições iniciais por sistema: {n_condicoes} | " +
+                 f"Total de {n_sistemas * n_condicoes} trajetórias</span>",
+            x=0.50,
+            y=0.95,
+            font=dict(size=20)
         ),
-        xaxis_title="Posição (m)",
-        yaxis_title="Velocidade (m/s)",
+        xaxis_title="Presas (x)",
+        yaxis_title="Predadores (y)",
         width=1400,
         height=1000,
         legend=dict(
-            title="Sistemas",
-            yanchor="top",
-            y=0.99,
+            title="Legenda",
+            x=0.95,
+            y=0.85,
             xanchor="left",
-            x=1.00,
+            yanchor="top",
             bgcolor="rgba(255, 255, 255, 0.9)",
-            bordercolor="Black",
+            bordercolor="black",
             borderwidth=1,
-            font=dict(size=12)
+            font=dict(size=16)
         ),
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=16,
-            font_family="Arial"
-        ),
-        plot_bgcolor='black',
-        paper_bgcolor='black',
+        hovermode='closest',
+        plot_bgcolor='white',
+        margin=dict(t=150),
         xaxis=dict(
             showgrid=False,
-            gridcolor='darkgray',
+            gridcolor='lightgray',
             zeroline=True,
-            zerolinecolor='white',
-            zerolinewidth=2,
-            title_font_color='white',
-            tickfont_color='white'
+            zerolinecolor='black',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
             showgrid=False,
-            gridcolor='darkgray',
+            gridcolor='lightgray',
             zeroline=True,
-            zerolinecolor='white',
-            zerolinewidth=2,
-            title_font_color='white',
-            tickfont_color='white'
-        ),
-        title_font_color='white'
+            zerolinecolor='black',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16),
+        )
     )
     
     return fig
@@ -429,12 +488,7 @@ def cria_grafico_pesos_por_amplitude(
         line=dict(color='red', width=2, dash='dash'),
         hovertemplate='Tendência: %{y:.4f}<extra></extra>'
     ))
-    
-    # estatísticas
-    peso_medio = pesos.mean()
-    peso_min = pesos.min()
-    peso_max = pesos.max()
-    
+        
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
