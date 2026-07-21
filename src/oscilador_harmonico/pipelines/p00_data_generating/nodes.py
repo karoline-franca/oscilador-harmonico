@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any, Tuple
 
-from .oscillator import OsciladorHarmonicoPyTorch 
+from .ohs import OsciladorHarmonicoPyTorch 
 
 import plotly.graph_objects as go
 

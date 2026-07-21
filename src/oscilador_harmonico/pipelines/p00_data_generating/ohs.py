@@ -1,5 +1,8 @@
 """
-Classe para resolver a equação do oscilador harmônico simples usando PyTorch e Runge-Kutta.
+Classe para resolver o oscilador harmônico simples usando PyTorch e Runge-Kutta.
+O oscilador harmônico simples descreve o movimento de um sistema massa-mola sem amortecimento.
+Sistema: dx/dt = v
+         dv/dt = -ω²*x
 """
 
 import numpy as np
