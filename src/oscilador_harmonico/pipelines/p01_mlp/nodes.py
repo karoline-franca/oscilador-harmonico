@@ -353,9 +353,16 @@ def treina_mlp_node(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
+    base_oscilador: pd.DataFrame = None,
+    trajetorias_train: np.ndarray = None
 ) -> Tuple[nn.Module, Dict]:
-    """Treina o modelo MLP para prever trajetórias completas."""
+    """Treina o modelo MLP para prever trajetórias completas.
+    
+    Se base_oscilador e trajetorias_train forem fornecidos, aplica pesos
+    inversos à amplitude para dar mais importância às trajetórias internas.
+    Estratégia: Weighted Loss - pesos na função de custo.
+    """
 
     mlp_config = parameters.get('mlp', {})
     
@@ -366,17 +373,80 @@ def treina_mlp_node(
     
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
+    omega = parameters.get('intervals', {}).get('omega', 5.0)
     
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
     grafico_historico_loss = f"{output_dir}/historico_treinamento_loss.html"
+    grafico_pesos = f"{output_dir}/distribuicao_pesos_treino.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Dispositivo: {device}")
     
     model = model.to(device)
+
+    use_weighted_loss = False
+    weights_por_amostra = None
     
+    if base_oscilador is not None and trajetorias_train is not None:
+        # calcula amplitude para cada trajetória de treino
+        amplitudes = {}
+        for traj_id in trajetorias_train:
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+            x0 = grupo['x0']
+            v0 = grupo['v0']
+            amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
+            amplitudes[traj_id] = amplitude
+        
+        amplitudes_array = np.array(list(amplitudes.values()))
+
+        amplitude_min = amplitudes_array.min()
+        amplitude_max = amplitudes_array.max()
+        amplitudes_norm = (amplitudes_array - amplitude_min) / (amplitude_max - amplitude_min + 1e-8)
+        pesos_trajetorias = 1.0 / (amplitudes_norm + 0.01)
+        
+        print("\n=== DISTRIBUIÇÃO DOS PESOS POR AMPLITUDE ===")
+        print(f"  Amplitude mínima: {amplitudes_array.min():.4f} m")
+        print(f"  Amplitude máxima: {amplitudes_array.max():.4f} m")
+        print(f"  Peso médio: {pesos_trajetorias.mean():.4f}")
+        print(f"  Peso mínimo: {pesos_trajetorias.min():.4f}")
+        print(f"  Peso máximo: {pesos_trajetorias.max():.4f}")
+                
+        fig_pesos = cria_grafico_pesos_por_amplitude(
+            amplitudes=amplitudes_array,
+            pesos=pesos_trajetorias,
+            omega=omega,
+            titulo="Distribuição dos Pesos por Amplitude"
+        )
+        
+        fig_pesos.write_html(grafico_pesos)
+        fig_pesos.show()
+        
+        # ============================================
+        # ESTRATÉGIA: Weighted Loss
+        # ============================================
+        use_weighted_loss = True
+        traj_peso_map = dict(zip(trajetorias_train, pesos_trajetorias))
+        
+        # cria pesos para cada ponto da trajetória
+        weights_por_amostra = []
+        for traj_id in trajetorias_train:
+            peso = traj_peso_map[traj_id]
+            # obtém o número de pontos desta trajetória
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id]
+            n_pontos = len(grupo)
+            weights_por_amostra.extend([peso] * n_pontos)
+        
+        weights_por_amostra = np.array(weights_por_amostra, dtype=np.float32)
+        # normaliza para ter média 1 (não alterar a escala da loss)
+        weights_por_amostra = weights_por_amostra / weights_por_amostra.mean()
+        
+        print(f"\n  Weighted Loss: {len(weights_por_amostra)} amostras com pesos")
+        print(f"    Peso médio: {weights_por_amostra.mean():.6f}")
+        print(f"    Peso mínimo: {weights_por_amostra.min():.6f}")
+        print(f"    Peso máximo: {weights_por_amostra.max():.6f}")
+        
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
@@ -388,7 +458,6 @@ def treina_mlp_node(
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
-    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
     
@@ -404,18 +473,52 @@ def treina_mlp_node(
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
     
+    if use_weighted_loss:
+        print(f"  Estratégia: Weighted Loss (pesos inversos à amplitude)")
+        print(f"    Erros em trajetórias internas são penalizados com maior peso")
+    
     for epoch in range(epochs):
         # treino
         model.train()
         epoch_train_loss = 0
         
-        for batch_X, batch_y in train_loader:
+        for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
             batch_X = batch_X.to(device)
             batch_y = batch_y.to(device)
             
             optimizer.zero_grad()
             predictions = model(batch_X)
-            loss = criterion(predictions, batch_y)
+            
+            # ============================================
+            # APLICAÇÃO DA WEIGHTED LOSS
+            # ============================================
+            if use_weighted_loss and weights_por_amostra is not None:
+                # obtém o tamanho real do batch atual
+                batch_size_real = len(batch_X)
+                
+                # calcula os índices corretos para este batch
+                start_idx = batch_idx * batch_size
+                
+                # garante que os índices não ultrapassem o tamanho do array de pesos
+                if start_idx + batch_size_real > len(weights_por_amostra):
+                    # último batch: pega os últimos elementos
+                    start_idx = len(weights_por_amostra) - batch_size_real
+                
+                # extrai os pesos para este batch
+                end_idx = start_idx + batch_size_real
+                batch_weights = torch.tensor(
+                    weights_por_amostra[start_idx:end_idx], 
+                    dtype=torch.float32
+                ).to(device)
+                
+                # loss ponderada
+                loss_per_element = (predictions - batch_y) ** 2
+                weighted_loss = (loss_per_element * batch_weights.reshape(-1, 1)).mean()
+                loss = weighted_loss
+            else:
+                # loss sem pesos
+                loss = nn.MSELoss()(predictions, batch_y)
+            
             loss.backward()
             optimizer.step()
             
@@ -431,7 +534,7 @@ def treina_mlp_node(
                 batch_X = batch_X.to(device)
                 batch_y = batch_y.to(device)
                 predictions = model(batch_X)
-                loss = criterion(predictions, batch_y)
+                loss = nn.MSELoss()(predictions, batch_y)
                 epoch_val_loss += loss.item()
         
         epoch_val_loss /= len(val_loader)
@@ -443,14 +546,14 @@ def treina_mlp_node(
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch:4d} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
-    
-    # ============================================
-    # GRÁFICO: Histórico de Treinamento
-    # ============================================
+        
+    titulo_historico = "Evolução da Função de Custo durante o Treinamento do MLP"
+    if use_weighted_loss:
+        titulo_historico += " (Weighted Loss)"
     
     fig = cria_grafico_historico_treinamento(
         history=history,
-        titulo="Evolução da Função de Custo durante o Treinamento do MLP"
+        titulo=titulo_historico
     )
     
     fig.write_html(grafico_historico_loss)
@@ -459,10 +562,12 @@ def treina_mlp_node(
     print(f"  Loss final de treino: {history['train_loss'][-1]:.6f}")
     print(f"  Loss final de validação: {history['val_loss'][-1]:.6f}")
     
+    if use_weighted_loss:
+        print(f"\n  Estratégia utilizada: Weighted Loss (trajetórias internas priorizadas)")
+    
     fig.show()
     
     return model, history
-
 def avalia_metricas_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
