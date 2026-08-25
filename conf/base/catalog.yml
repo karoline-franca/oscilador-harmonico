@@ -13,9 +13,9 @@ condicoes_iniciais:
     sep: ';'
     encoding: 'latin-1'
 
-frequencias_angulares:
+parametros_oscilador:
   type: pandas.CSVDataset
-  filepath: data/02_intermediate/${runtime_params:data_version,default_v1}/frequencias_angulares.csv
+  filepath: data/02_intermediate/${runtime_params:data_version,default_v1}/parametros_oscilador.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
@@ -24,25 +24,13 @@ frequencias_angulares:
     sep: ';'
     encoding: 'latin-1'
 
-trajetorias_train:
-  type: pickle.PickleDataset
-  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_train.pkl
-
-trajetorias_val:
-  type: pickle.PickleDataset
-  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_val.pkl
-
-trajetorias_test:
-  type: pickle.PickleDataset
-  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_test.pkl
-
 solucao_rk4:
   type: pickle.PickleDataset
   filepath: data/03_primary/${runtime_params:data_version,default_v1}/solucao_rk4.pkl
 
 base_oscilador:
   type: pandas.CSVDataset
-  filepath: data/04_feature/${runtime_params:data_version,default_v1}/base_ohs.csv
+  filepath: data/04_feature/${runtime_params:data_version,default_v1}/base_olv.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'
@@ -60,6 +48,18 @@ metadata_simulacao:
 # ============================================================
 # PIPELINE P01 - TREINAMENTO MLP
 # ============================================================
+
+trajetorias_train:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_train.pkl
+
+trajetorias_val:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_val.pkl
+
+trajetorias_test:
+  type: pickle.PickleDataset
+  filepath: data/06_models/${runtime_params:exp_name,default_exp}/${runtime_params:data_version,default_v1}/trajetorias_test.pkl
 
 X_train:
   type: pickle.PickleDataset

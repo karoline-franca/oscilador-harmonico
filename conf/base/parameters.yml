@@ -3,16 +3,17 @@ simulation:
   n_condicoes_iniciais: 500
   num_periodos: 1
   dt: 0.01
+  save_every: 2
 
 intervals:
-  taxa_crescimento: 2.0              # a - taxa de crescimento das presas (1/s)
+  taxa_crescimento: 2.0             # a - taxa de crescimento das presas (1/s)
   taxa_predacao: 0.5                # b - taxa de predação (1/(indivíduo·s))
   taxa_mortalidade: 1.0             # c - taxa de mortalidade dos predadores (1/s)
   taxa_eficiencia: 0.2              # d - eficiência de conversão (1/indivíduo·s)
   x0_min: 0.5                       # população mínima de presas
-  x0_max: 3.0                       # população máxima de presas
+  x0_max: 8.0                       # população máxima de presas
   y0_min: 0.3                       # população mínima de predadores
-  y0_max: 2.0                       # população máxima de predadores
+  y0_max: 6.0                       # população máxima de predadores
 
 seed: 42
 
@@ -28,6 +29,8 @@ outputs:
   base_csv: "base_olv.csv"
 
 mlp:
+  input_dim: 7                      # dimensões de entrada da rede neural
+  output_dim: 2                     # dimensões de saída da rede neural
   hidden_dims: [64, 128, 256]       # camadas ocultas
   activation: "relu"                # função de ativação
   batch_size: 512                   # tamanho do batch

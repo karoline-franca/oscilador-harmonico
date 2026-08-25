@@ -1,7 +1,7 @@
-# nodes saída: trajetória completa; entrada: [x0, v0]
-
 """
-Nodes do pipeline MLP para previsão de trajetórias completas.
+Nodes do pipeline MLP para previsão de trajetórias completas do oscilador de Lotka-Volterra.
+Entrada: [x0, y0] (presas, predadores)
+Saída: Trajetória completa [x_0, y_0, x_1, y_1, ..., x_N, y_N]
 """
 
 import numpy as np
@@ -15,15 +15,16 @@ from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
+from scipy.interpolate import interp1d
 from typing import Dict, Any, Tuple
 from .model import MLP
-from oscilador_harmonico.utils import (
+from oscilador_lotka_volterra.pipelines.p00_data_generating.olv import OsciladorLotkaVolterra
+from oscilador_lotka_volterra.utils import (
     CORES_PALETA,
-    cria_grafico_real_previsto_mlp,
     cria_grafico_distribuicao_amplitudes,
-    cria_grafico_pesos_por_amplitude,
     cria_grafico_distribuicao_dados,
     cria_grafico_historico_treinamento,
+    cria_grafico_real_previsto_mlp,
     cria_grafico_previsoes_espaco_fases,
     cria_grafico_interpolacao_completo,
     cria_grafico_interpolacao_espaco_fases,
@@ -50,10 +51,10 @@ def fixar_sementes(seed: int = 42):
 
 def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
     """
-    Prepara os dados para treinamento do MLP.
+    Prepara os dados para treinamento do MLP para o oscilador de Lotka-Volterra.
     
-    Entrada: [x0, v0]
-    Saída: Trajetória completa [x_0, v_0, x_1, v_1, ..., x_N, v_N]
+    Entrada: [x0, y0] (presas, predadores)
+    Saída: Trajetória completa [x_0, y_0, x_1, y_1, ..., x_N, y_N]
     
     O tempo é usado apenas para organizar os pontos da trajetória,
     mas não é uma feature de entrada.
@@ -72,15 +73,32 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
             print("  AVISO: Valores 'nan' encontrados em id_trajetoria. Recriando identificadores...")
             base_oscilador['id_trajetoria'] = 'sistema_' + base_oscilador['sistema_id'].astype(str) + '_condicao_' + base_oscilador['simulacao_id'].astype(str)
     
-    if base_oscilador[['x0', 'v0']].isnull().any().any():
+    if base_oscilador[['x0', 'y0']].isnull().any().any():
         print("  AVISO: Valores NaN detectados nas colunas numéricas!")
-        base_oscilador = base_oscilador.dropna(subset=['x0', 'v0'])
+        base_oscilador = base_oscilador.dropna(subset=['x0', 'y0'])
     
-    frequencia_angular_unica = base_oscilador['frequencia_angular'].iloc[0] if len(base_oscilador) > 0 else 5.0
-    omega = frequencia_angular_unica
+    # parâmetros do sistema - ponto de equilíbrio
+    if 'presas_eq' in base_oscilador.columns and 'predadores_eq' in base_oscilador.columns:
+        x_eq = base_oscilador['presas_eq'].iloc[0] if len(base_oscilador) > 0 else 5.0
+        y_eq = base_oscilador['predadores_eq'].iloc[0] if len(base_oscilador) > 0 else 4.0
+    else:
+        x_eq = 5.0  # valor padrão (c/d com c=1.0, d=0.2)
+        y_eq = 4.0  # valor padrão (a/b com a=2.0, b=0.5)
+    
+    # parâmetros do sistema
+    if 'taxa_crescimento_a' in base_oscilador.columns:
+        a = base_oscilador['taxa_crescimento_a'].iloc[0] if len(base_oscilador) > 0 else 2.0
+    else:
+        a = 2.0
+    
+    if 'taxa_mortalidade_c' in base_oscilador.columns:
+        c = base_oscilador['taxa_mortalidade_c'].iloc[0] if len(base_oscilador) > 0 else 1.0
+    else:
+        c = 1.0
     
     print(f"\n=== BASE DE DADOS ===")
-    print(f"  Frequência angular do sistema: {frequencia_angular_unica} rad/s")
+    print(f"  Parâmetros do sistema: a={a:.3f}, c={c:.3f}")
+    print(f"  Ponto de equilíbrio: x*={x_eq:.3f}, y*={y_eq:.3f}")
     print(f"  Total de linhas da base: {len(base_oscilador)}")
     
     if 'id_trajetoria' in base_oscilador.columns:
@@ -88,47 +106,45 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         print(f"  Total de trajetórias únicas: {len(trajetorias_unicas)}")
         
         if len(trajetorias_unicas) == 1 and 'nan' in str(trajetorias_unicas[0]).lower():
-            print("  AVISO: id_trajetoria ainda com problemas. Recriando baseado em x0, v0...")
+            print("  AVISO: id_trajetoria ainda com problemas. Recriando baseado em x0, y0...")
             base_oscilador['id_trajetoria'] = 'x0_' + base_oscilador['x0'].round(6).astype(str) + \
-                                              '_v0_' + base_oscilador['v0'].round(6).astype(str)
+                                              '_y0_' + base_oscilador['y0'].round(6).astype(str)
             trajetorias_unicas = base_oscilador['id_trajetoria'].unique()
             print(f"  Nova contagem de trajetórias: {len(trajetorias_unicas)}")
     else:
         print("  ERRO: Coluna 'id_trajetoria' não encontrada!")
-        print("  Criando id_trajetoria baseado em x0, v0")
+        print("  Criando id_trajetoria baseado em x0, y0")
         base_oscilador['id_trajetoria'] = 'x0_' + base_oscilador['x0'].round(6).astype(str) + \
-                                          '_v0_' + base_oscilador['v0'].round(6).astype(str)
+                                          '_y0_' + base_oscilador['y0'].round(6).astype(str)
         trajetorias_unicas = base_oscilador['id_trajetoria'].unique()
         print(f"  Total de trajetórias criadas: {len(trajetorias_unicas)}")
     
     # obtém o número de pontos por trajetória a partir dos dados
-    # cada trajetória tem a mesma quantidade de pontos (definido pela simulação)
     primeiro_grupo = base_oscilador[base_oscilador['id_trajetoria'] == trajetorias_unicas[0]].sort_values('tempo')
     num_timesteps = len(primeiro_grupo)
     
     print(f"\n=== PREPARAÇÃO DOS DADOS ===")
     
-    X_list = []  # [x0, v0] para cada trajetória
+    X_list = []  # [x0, y0] para cada trajetória
     y_list = []  # trajetória completa intercalada para cada trajetória
     tempos_list = []  # tempos para referência
     
     for traj_id in trajetorias_unicas:
         grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].sort_values('tempo')
         
-        # verifica se todos os pontos estão presentes
         if len(grupo) != num_timesteps:
             print(f"  AVISO: Trajetória {traj_id} tem {len(grupo)} pontos, pulando...")
             continue
         
-        # entrada: [x0, v0]
+        # entrada: [x0, y0] - presas e predadores iniciais
         x0 = grupo['x0'].iloc[0]
-        v0 = grupo['v0'].iloc[0]
-        X_list.append([x0, v0])
+        y0 = grupo['y0'].iloc[0]
+        X_list.append([x0, y0])
         
-        # saída: trajetória completa intercalada [x0, v0, x1, v1, ..., xN, vN]
-        posicoes = grupo['posicao'].values
-        velocidades = grupo['velocidade'].values
-        trajetoria = np.column_stack([posicoes, velocidades]).flatten()
+        # saída: trajetória completa intercalada [x0, y0, x1, y1, ..., xN, yN]
+        presas = grupo['presas'].values
+        predadores = grupo['predadores'].values
+        trajetoria = np.column_stack([presas, predadores]).flatten()
         y_list.append(trajetoria)
         
         # tempos para referência
@@ -139,7 +155,7 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     tempos_referencia = np.array(tempos_list[0]) if tempos_list else np.array([])
     
     print(f"\n  Trajetórias válidas: {len(X_raw)}")
-    print(f"  Dimensão entrada: {X_raw.shape[1]} (x0, v0)")
+    print(f"  Dimensão entrada: {X_raw.shape[1]} (x0, y0)")
     print(f"  Dimensão saída: {y_raw.shape[1]} (2N)")
     print(f"  Nós de saída do modelo por trajetória: {num_timesteps}")
     
@@ -186,10 +202,9 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     input_dim = X_raw.shape[1]
     output_dim = y_raw.shape[1]
     
-    print(f"\n  Dimensão entrada: {input_dim} (x0, v0)")
+    print(f"\n  Dimensão entrada: {input_dim} (x0, y0)")
     print(f"  Dimensão saída: {output_dim} (2N)")
     
-    # tempos de referência e número de timesteps
     return (X_scaled_train, y_scaled_train, 
             X_scaled_val, y_scaled_val, 
             X_scaled_test, y_scaled_test, 
@@ -213,7 +228,6 @@ def visualiza_distribuicao_dados_separado(
     """
     
     data_version = parameters.get('data_version', 'default_v1')
-    omega = parameters.get('intervals', {}).get('omega', 5.0)
     
     output_dir = f"data/08_reporting/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
@@ -237,33 +251,48 @@ def visualiza_distribuicao_dados_separado(
     # CÁLCULO DAS AMPLITUDES PARA VISUALIZAÇÃO
     # ============================================
     
-    # calcula amplitude para cada trajetória
-    amplitudes = {}
-    for traj_id in trajetorias_unicas:
-        grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
-        x0 = grupo['x0']
-        v0 = grupo['v0']
-        amplitude = np.sqrt(x0**2 + (v0 / omega)**2)
-        amplitudes[traj_id] = amplitude
+    if 'presas_eq' in base_oscilador.columns and 'predadores_eq' in base_oscilador.columns:
+        presas_eq = base_oscilador['presas_eq'].iloc[0]
+        predadores_eq = base_oscilador['predadores_eq'].iloc[0]
+        
+        amplitudes = {}
+        for traj_id in trajetorias_unicas:
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id].iloc[0]
+            x0 = grupo['x0']
+            y0 = grupo['y0']
+            # distância euclidiana do ponto de equilíbrio
+            amplitude = np.sqrt((x0 - presas_eq)**2 + (y0 - predadores_eq)**2)
+            amplitudes[traj_id] = amplitude
+    else:
+        amplitudes = {}
+        for traj_id in trajetorias_unicas:
+            grupo = base_oscilador[base_oscilador['id_trajetoria'] == traj_id]
+            presas = grupo['presas'].values
+            predadores = grupo['predadores'].values
+            amp_presas = np.max(presas) - np.min(presas)
+            amp_predadores = np.max(predadores) - np.min(predadores)
+            amplitude = np.sqrt(amp_presas**2 + amp_predadores**2)
+            amplitudes[traj_id] = amplitude
     
     # ordena de forma ascendente as trajetórias por amplitude
     trajetorias_ordenadas = sorted(amplitudes.items(), key=lambda x: x[1])
     amplitudes_ordenadas = [t[1] for t in trajetorias_ordenadas]
     
     print(f"\n=== DISTRIBUIÇÃO DAS TRAJETÓRIAS POR AMPLITUDE ===")
-    print(f"  Amplitude mínima: {amplitudes_ordenadas[0]:.4f} m")
-    print(f"  Amplitude máxima: {amplitudes_ordenadas[-1]:.4f} m")
-    print(f"  Amplitude mediana: {amplitudes_ordenadas[len(amplitudes_ordenadas)//2]:.4f} m")
+    print(f"  Amplitude mínima: {amplitudes_ordenadas[0]:.4f}")
+    print(f"  Amplitude máxima: {amplitudes_ordenadas[-1]:.4f}")
+    print(f"  Amplitude mediana: {amplitudes_ordenadas[len(amplitudes_ordenadas)//2]:.4f}")
     
     # ============================================
     # GRÁFICO: Distribuição das Amplitudes
     # ============================================
     
+    # Nota: O parâmetro omega não é mais utilizado, pois no Lotka-Volterra
+    # a frequência não é constante. A amplitude é definida como distância do equilíbrio.
     fig_amp = cria_grafico_distribuicao_amplitudes(
         amplitudes=np.array(amplitudes_ordenadas),
         amplitude_limite_internas=None,
-        omega=omega,
-        titulo="Distribuição das Amplitudes das Trajetórias"
+        titulo="Distribuição das Amplitudes das Trajetórias - Lotka-Volterra"
     )
     
     fig_amp.write_html(grafico_distribuicao_amplitudes)
@@ -273,7 +302,7 @@ def visualiza_distribuicao_dados_separado(
     # DIVISÃO DOS DADOS
     # ============================================
     
-    # divide todas as trajetórias em treino, validação e teste (70/20/10)
+    # treino, validação e teste (70/20/10)
     trajetorias_train, trajetorias_temp = train_test_split(
         trajetorias_unicas, test_size=0.30, random_state=42
     )
@@ -286,30 +315,29 @@ def visualiza_distribuicao_dados_separado(
     print(f"  Trajetórias de validação: {len(trajetorias_val)}")
     print(f"  Trajetórias de teste: {len(trajetorias_test)}")
         
-    # seleciona os dados de cada conjunto baseado nas trajetórias
     dados_train = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_train)]
     dados_val = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_val)]
     dados_test = base_oscilador[base_oscilador['id_trajetoria'].isin(trajetorias_test)]
     
-    y_pos_train = dados_train['posicao'].values.astype(np.float32).reshape(-1, 1)
-    y_vel_train = dados_train['velocidade'].values.astype(np.float32).reshape(-1, 1)
-    y_pos_val = dados_val['posicao'].values.astype(np.float32).reshape(-1, 1)
-    y_vel_val = dados_val['velocidade'].values.astype(np.float32).reshape(-1, 1)
-    y_pos_test = dados_test['posicao'].values.astype(np.float32).reshape(-1, 1)
-    y_vel_test = dados_test['velocidade'].values.astype(np.float32).reshape(-1, 1)
+    y_presas_train = dados_train['presas'].values.astype(np.float32).reshape(-1, 1)
+    y_predadores_train = dados_train['predadores'].values.astype(np.float32).reshape(-1, 1)
+    y_presas_val = dados_val['presas'].values.astype(np.float32).reshape(-1, 1)
+    y_predadores_val = dados_val['predadores'].values.astype(np.float32).reshape(-1, 1)
+    y_presas_test = dados_test['presas'].values.astype(np.float32).reshape(-1, 1)
+    y_predadores_test = dados_test['predadores'].values.astype(np.float32).reshape(-1, 1)
     
     # ============================================
     # GRÁFICO: Distribuição no Espaço de Fases
     # ============================================
     
     fig = cria_grafico_distribuicao_dados(
-        y_pos_train=y_pos_train,
-        y_vel_train=y_vel_train,
-        y_pos_val=y_pos_val,
-        y_vel_val=y_vel_val,
-        y_pos_test=y_pos_test,
-        y_vel_test=y_vel_test,
-        titulo="Distribuição dos Dados no Espaço de Fases"
+        y_pos_train=y_presas_train,
+        y_vel_train=y_predadores_train,
+        y_pos_val=y_presas_val,
+        y_vel_val=y_predadores_val,
+        y_pos_test=y_presas_test,
+        y_vel_test=y_predadores_test,
+        titulo="Distribuição dos Dados no Espaço de Fases - Lotka-Volterra"
     )
     
     fig.write_html(grafico_distribuicao_dados) 
@@ -319,7 +347,7 @@ def visualiza_distribuicao_dados_separado(
 
 
 def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, Any]) -> nn.Module:
-    """Cria o modelo MLP para previsão de trajetórias completas."""
+    """Cria o modelo MLP para previsão de trajetórias completas do Lotka-Volterra."""
 
     mlp_config = parameters.get('mlp', {})
     seed = parameters.get('seed', 42)
@@ -338,9 +366,9 @@ def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, 
     )
     
     print("\n=== MODELO MLP CRIADO ===")
-    print(f"  Dimensão entrada: {input_dim} (x0, v0)")
+    print(f"  Dimensão entrada: {input_dim} (x0, y0)")
     print(f"  Camadas ocultas: {hidden_dims}")
-    print(f"  Dimensão saída: {output_dim}  (2N)")
+    print(f"  Dimensão saída: {output_dim} (2N)")
     print(f"  Parâmetros treináveis: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     print(f"  Função de ativação: {activation.capitalize()}")
     
@@ -355,7 +383,7 @@ def treina_mlp_node(
     y_val: np.ndarray,
     parameters: Dict[str, Any]
 ) -> Tuple[nn.Module, Dict]:
-    """Treina o modelo MLP para prever trajetórias completas."""
+    """Treina o modelo MLP para prever trajetórias completas do Lotka-Volterra."""
 
     mlp_config = parameters.get('mlp', {})
     
@@ -398,7 +426,7 @@ def treina_mlp_node(
     }
     
     print("\n=== INICIANDO TREINAMENTO DO MLP ===")
-    print(f"  Entrada: (x0, v0) -> Saída: (trajetória completa)")
+    print(f"  Entrada: (x0, y0) -> Saída: (trajetória completa presas/predadores)")
     print(f"  Batch size: {batch_size}")
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
@@ -450,7 +478,7 @@ def treina_mlp_node(
     
     fig = cria_grafico_historico_treinamento(
         history=history,
-        titulo="Evolução da Função de Custo durante o Treinamento do MLP"
+        titulo="Evolução da Função de Custo durante o Treinamento do MLP - Lotka-Volterra"
     )
     
     fig.write_html(grafico_historico_loss)
@@ -463,6 +491,7 @@ def treina_mlp_node(
     
     return model, history
 
+
 def avalia_metricas_mlp_node(
     model: nn.Module,
     X_val: np.ndarray,
@@ -472,7 +501,7 @@ def avalia_metricas_mlp_node(
     scaler_y: StandardScaler,
 ) -> Dict[str, float]:
     """
-    Avalia o modelo MLP nos dados de validação e teste.
+    Avalia o modelo MLP nos dados de validação e teste para o Lotka-Volterra.
     
     Avalia tanto a trajetória completa quanto cada ponto individualmente.
     """
@@ -494,48 +523,48 @@ def avalia_metricas_mlp_node(
     predictions_test = scaler_y.inverse_transform(predictions_scaled_test)
     y_test_original = scaler_y.inverse_transform(y_test)
     
-    # separa posições e velocidades das trajetórias
-    pos_pred_val = predictions_val[:, 0::2]
-    vel_pred_val = predictions_val[:, 1::2]
-    pos_true_val = y_val_original[:, 0::2]
-    vel_true_val = y_val_original[:, 1::2]
+    # separa presas e predadores das trajetórias
+    presas_pred_val = predictions_val[:, 0::2]
+    predadores_pred_val = predictions_val[:, 1::2]
+    presas_true_val = y_val_original[:, 0::2]
+    predadores_true_val = y_val_original[:, 1::2]
     
-    pos_pred_test = predictions_test[:, 0::2]
-    vel_pred_test = predictions_test[:, 1::2]
-    pos_true_test = y_test_original[:, 0::2]
-    vel_true_test = y_test_original[:, 1::2]
+    presas_pred_test = predictions_test[:, 0::2]
+    predadores_pred_test = predictions_test[:, 1::2]
+    presas_true_test = y_test_original[:, 0::2]
+    predadores_true_test = y_test_original[:, 1::2]
     
     # avalia ponto a ponto
-    rmse_pos_val = float(np.sqrt(mean_squared_error(pos_true_val.flatten(), pos_pred_val.flatten())))
-    rmse_vel_val = float(np.sqrt(mean_squared_error(vel_true_val.flatten(), vel_pred_val.flatten())))
-    r2_pos_val = float(r2_score(pos_true_val.flatten(), pos_pred_val.flatten()))
-    r2_vel_val = float(r2_score(vel_true_val.flatten(), vel_pred_val.flatten()))
+    rmse_presas_val = float(np.sqrt(mean_squared_error(presas_true_val.flatten(), presas_pred_val.flatten())))
+    rmse_predadores_val = float(np.sqrt(mean_squared_error(predadores_true_val.flatten(), predadores_pred_val.flatten())))
+    r2_presas_val = float(r2_score(presas_true_val.flatten(), presas_pred_val.flatten()))
+    r2_predadores_val = float(r2_score(predadores_true_val.flatten(), predadores_pred_val.flatten()))
     
-    rmse_pos_test = float(np.sqrt(mean_squared_error(pos_true_test.flatten(), pos_pred_test.flatten())))
-    rmse_vel_test = float(np.sqrt(mean_squared_error(vel_true_test.flatten(), vel_pred_test.flatten())))
-    r2_pos_test = float(r2_score(pos_true_test.flatten(), pos_pred_test.flatten()))
-    r2_vel_test = float(r2_score(vel_true_test.flatten(), vel_pred_test.flatten()))
+    rmse_presas_test = float(np.sqrt(mean_squared_error(presas_true_test.flatten(), presas_pred_test.flatten())))
+    rmse_predadores_test = float(np.sqrt(mean_squared_error(predadores_true_test.flatten(), predadores_pred_test.flatten())))
+    r2_presas_test = float(r2_score(presas_true_test.flatten(), presas_pred_test.flatten()))
+    r2_predadores_test = float(r2_score(predadores_true_test.flatten(), predadores_pred_test.flatten()))
 
     metrics = {
-        'rmse_posicao_val': rmse_pos_val,
-        'rmse_velocidade_val': rmse_vel_val,
-        'r2_posicao_val': r2_pos_val,
-        'r2_velocidade_val': r2_vel_val,
-        'rmse_posicao_test': rmse_pos_test,
-        'rmse_velocidade_test': rmse_vel_test,
-        'r2_posicao_test': r2_pos_test,
-        'r2_velocidade_test': r2_vel_test,
+        'rmse_presas_val': rmse_presas_val,
+        'rmse_predadores_val': rmse_predadores_val,
+        'r2_presas_val': r2_presas_val,
+        'r2_predadores_val': r2_predadores_val,
+        'rmse_presas_test': rmse_presas_test,
+        'rmse_predadores_test': rmse_predadores_test,
+        'r2_presas_test': r2_presas_test,
+        'r2_predadores_test': r2_predadores_test,
     }
     
-    print("\n=== AVALIAÇÃO DO MODELO MLP ===")
-    print(f"  RMSE Posição Validação: {rmse_pos_val:.6f} m")
-    print(f"  RMSE Velocidade Validação: {rmse_vel_val:.6f} m/s")
-    print(f"  R² Posição Validação: {r2_pos_val:.4f}")
-    print(f"  R² Velocidade Validação: {r2_vel_val:.4f}")
-    print(f"  RMSE Posição Teste: {rmse_pos_test:.6f} m")
-    print(f"  RMSE Velocidade Teste: {rmse_vel_test:.6f} m/s")
-    print(f"  R² Posição Teste: {r2_pos_test:.4f}")
-    print(f"  R² Velocidade Teste: {r2_vel_test:.4f}")
+    print("\n=== AVALIAÇÃO DO MODELO MLP - LOTKA-VOLTERRA ===")
+    print(f"  RMSE Presas Validação: {rmse_presas_val:.6f}")
+    print(f"  RMSE Predadores Validação: {rmse_predadores_val:.6f}")
+    print(f"  R² Presas Validação: {r2_presas_val:.4f}")
+    print(f"  R² Predadores Validação: {r2_predadores_val:.4f}")
+    print(f"  RMSE Presas Teste: {rmse_presas_test:.6f}")
+    print(f"  RMSE Predadores Teste: {rmse_predadores_test:.6f}")
+    print(f"  R² Presas Teste: {r2_presas_test:.4f}")
+    print(f"  R² Predadores Teste: {r2_predadores_test:.4f}")
 
     return metrics
 
@@ -596,15 +625,15 @@ def visualiza_previsoes_mlp_node(
         pred_traj = predictions[idx]
         true_traj = y_test_original[idx]
         
-        # intercala posições e velocidades
-        pred_pos = pred_traj[0::2]
-        pred_vel = pred_traj[1::2]
-        true_pos = true_traj[0::2]
-        true_vel = true_traj[1::2]
+        # intercala presas e predadores (x0, y0, x1, y1, ...)
+        pred_presas = pred_traj[0::2]
+        pred_predadores = pred_traj[1::2]
+        true_presas = true_traj[0::2]
+        true_predadores = true_traj[1::2]
         
-        for i in range(len(pred_pos)):
-            predictions_flat.append([pred_pos[i], pred_vel[i]])
-            y_true_flat.append([true_pos[i], true_vel[i]])
+        for i in range(len(pred_presas)):
+            predictions_flat.append([pred_presas[i], pred_predadores[i]])
+            y_true_flat.append([true_presas[i], true_predadores[i]])
     
     predictions_flat = np.array(predictions_flat)
     y_true_flat = np.array(y_true_flat)
@@ -612,14 +641,13 @@ def visualiza_previsoes_mlp_node(
     fig = cria_grafico_real_previsto_mlp(
         predictions=predictions_flat,
         y_true=y_true_flat,
-        titulo="Real vs Previsto (Dados de Teste)"
+        titulo="Real vs Previsto - Lotka-Volterra (Dados de Teste)"
     )
     
     fig.write_html(grafico_previsoes_mlp)    
     fig.show()
     
     return None
-
 
 def visualiza_previsoes_espaco_fases_node(
     model: nn.Module,
@@ -630,7 +658,7 @@ def visualiza_previsoes_espaco_fases_node(
     tempos_referencia: np.ndarray
 ) -> None:
     """
-    Node: Visualiza as previsões do modelo no espaço de fases (Posição vs Velocidade).
+    Node: Visualiza as previsões do modelo no espaço de fases (Presas vs Predadores).
     Mostra trajetórias completas.
     
     Args:
@@ -675,47 +703,47 @@ def visualiza_previsoes_espaco_fases_node(
     indices_vis = rng.choice(len(predictions), num_trajetorias_vis, replace=False)
     
     # dados para o gráfico de espaço de fases
-    y_pos_true_list = []
-    y_vel_true_list = []
-    y_pos_pred_list = []
-    y_vel_pred_list = []
+    y_presas_true_list = []
+    y_predadores_true_list = []
+    y_presas_pred_list = []
+    y_predadores_pred_list = []
     
     for idx in indices_vis:
         pred_traj = predictions[idx]
         true_traj = y_test_original[idx]
         
-        pred_pos = pred_traj[0::2]
-        pred_vel = pred_traj[1::2]
-        true_pos = true_traj[0::2]
-        true_vel = true_traj[1::2]
+        pred_presas = pred_traj[0::2]
+        pred_predadores = pred_traj[1::2]
+        true_presas = true_traj[0::2]
+        true_predadores = true_traj[1::2]
         
-        y_pos_true_list.extend(true_pos)
-        y_vel_true_list.extend(true_vel)
-        y_pos_pred_list.extend(pred_pos)
-        y_vel_pred_list.extend(pred_vel)
+        y_presas_true_list.extend(true_presas)
+        y_predadores_true_list.extend(true_predadores)
+        y_presas_pred_list.extend(pred_presas)
+        y_predadores_pred_list.extend(pred_predadores)
     
-    y_pos_true = np.array(y_pos_true_list).reshape(-1, 1)
-    y_vel_true = np.array(y_vel_true_list).reshape(-1, 1)
-    y_pos_pred = np.array(y_pos_pred_list).reshape(-1, 1)
-    y_vel_pred = np.array(y_vel_pred_list).reshape(-1, 1)
+    y_presas_true = np.array(y_presas_true_list).reshape(-1, 1)
+    y_predadores_true = np.array(y_predadores_true_list).reshape(-1, 1)
+    y_presas_pred = np.array(y_presas_pred_list).reshape(-1, 1)
+    y_predadores_pred = np.array(y_predadores_pred_list).reshape(-1, 1)
     
     # calcula métricas para exibição
-    rmse_pos = np.sqrt(mean_squared_error(y_pos_true, y_pos_pred))
-    rmse_vel = np.sqrt(mean_squared_error(y_vel_true, y_vel_pred))
-    r2_pos = r2_score(y_pos_true, y_pos_pred)
-    r2_vel = r2_score(y_vel_true, y_vel_pred)
+    rmse_presas = np.sqrt(mean_squared_error(y_presas_true, y_presas_pred))
+    rmse_predadores = np.sqrt(mean_squared_error(y_predadores_true, y_predadores_pred))
+    r2_presas = r2_score(y_presas_true, y_presas_pred)
+    r2_predadores = r2_score(y_predadores_true, y_predadores_pred)
     
-    print(f"  RMSE Posição: {rmse_pos:.6f} m")
-    print(f"  RMSE Velocidade: {rmse_vel:.6f} m/s")
-    print(f"  R² Posição: {r2_pos:.4f}")
-    print(f"  R² Velocidade: {r2_vel:.4f}")
+    print(f"  RMSE Presas: {rmse_presas:.6f}")
+    print(f"  RMSE Predadores: {rmse_predadores:.6f}")
+    print(f"  R² Presas: {r2_presas:.4f}")
+    print(f"  R² Predadores: {r2_predadores:.4f}")
     
     fig = cria_grafico_previsoes_espaco_fases(
-        y_pos_true=y_pos_true,
-        y_vel_true=y_vel_true,
-        y_pos_pred=y_pos_pred,
-        y_vel_pred=y_vel_pred,
-        titulo="Previsões do Modelo no Espaço de Fases"
+        y_pos_true=y_presas_true,
+        y_vel_true=y_predadores_true,
+        y_pos_pred=y_presas_pred,
+        y_vel_pred=y_predadores_pred,
+        titulo="Previsões do Modelo no Espaço de Fases - Lotka-Volterra"
     )
     
     fig.write_html(grafico_previsoes_espaco_fases)    
@@ -734,7 +762,7 @@ def interpola_trajetorias_avulsas_node(
     """
     Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
     para novas condições iniciais não vistas durante o treinamento.
-    Nota: A frequência angular é fixa para todos os casos.
+    Nota: Os parâmetros do sistema (a, b, c, d) são fixos para todos os casos.
     
     Args:
         model: Modelo MLP treinado (prevê trajetórias completas)
@@ -750,7 +778,7 @@ def interpola_trajetorias_avulsas_node(
     output_dir = f"data/08_reporting/{exp_name}/{data_version}"
     os.makedirs(output_dir, exist_ok=True)
     
-    grafico_interpolacao_completa = f"{output_dir}/interpolacao_avulsa_v_x_vs_t.html"
+    grafico_interpolacao_completa = f"{output_dir}/interpolacao_avulsa_presas_predadores_vs_t.html"
     grafico_interpolacao_espaco_fases = f"{output_dir}/interpolacao_avulsa_espaco_fases.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -758,14 +786,35 @@ def interpola_trajetorias_avulsas_node(
     model.eval()
     
     intervals = parameters.get('intervals', {})
-    omega_fixo = intervals.get('omega', 5.0)
+    
+    # Parâmetros do sistema Lotka-Volterra
+    a = intervals.get('taxa_crescimento', 2.0)
+    b = intervals.get('taxa_predacao', 0.5)
+    c = intervals.get('taxa_mortalidade', 1.0)
+    d = intervals.get('taxa_eficiencia', 0.2)
+    
+    # Ponto de equilíbrio
+    x_eq = c / d
+    y_eq = a / b
     
     if tempos_referencia is None:
+        # período aproximado para definir tempo de simulação
+        osc_temp = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d]
+        )
+        T_aprox = osc_temp.periodos.cpu().numpy()[0]
+        
         sim_params = parameters.get('simulation', {})
         dt = sim_params.get('dt', 0.01)
-        T = 2 * np.pi / omega_fixo
-        tempos_referencia = np.arange(0, T + dt, dt)
+        num_periodos = sim_params.get('num_periodos', 3)
+        t_final = num_periodos * T_aprox
+        tempos_referencia = np.arange(0, t_final + dt, dt)
         print(f"  Tempos de referência criados: {len(tempos_referencia)} pontos")
+        print(f"  Período aproximado: {T_aprox:.4f} s")
+        print(f"  Tempo final: {t_final:.4f} s")
     else:
         print(f"\n  Nós de saída do modelo por trajetória: {len(tempos_referencia)} pontos")
     
@@ -775,48 +824,53 @@ def interpola_trajetorias_avulsas_node(
     casos_teste = [
         {
             "nome": "Caso 1",
-            "x0": 0.3,
-            "v0": 0.0,
-            "omega": 5.1,
+            "x0": 2.0,
+            "y0": 1.0,
             "cor": CORES_PALETA[0]
         },
         {
             "nome": "Caso 2",
-            "x0": -0.3,
-            "v0": 1.0,
-            "omega": omega_fixo,
+            "x0": 3.0,
+            "y0": 0.5,
             "cor": CORES_PALETA[1]
         },
         {
             "nome": "Caso 3",
-            "x0": 0.5,
-            "v0": -1.0,
-            "omega": omega_fixo,
+            "x0": 1.0,
+            "y0": 2.0,
             "cor": CORES_PALETA[2]
         },
         {
             "nome": "Caso 4",
-            "x0": -0.1,
-            "v0": 0.5,
-            "omega": omega_fixo,
+            "x0": 4.0,
+            "y0": 1.5,
             "cor": CORES_PALETA[3]
+        },
+        {
+            "nome": "Caso 5",
+            "x0": 0.5,
+            "y0": 3.0,
+            "cor": CORES_PALETA[4]
         },
     ]
     
     # gera os nomes das legendas dinamicamente
     for caso in casos_teste:
-        T = 2 * np.pi / caso["omega"] if caso["omega"] > 0 else 2 * np.pi / omega_fixo
-        caso["t_final"] = T
         caso["nome_legenda"] = (
-            f"{caso['nome']}: x0={caso['x0']:.1f} m, "
-            f"v0={caso['v0']:.1f} m/s, "
-            f"ω={caso['omega']:.1f} rad/s, "
-            f"T={T:.2f} s"
+            f"{caso['nome']}: x0={caso['x0']:.1f}, "
+            f"y0={caso['y0']:.1f}"
         )
+        # informações do sistema
+        caso["a"] = a
+        caso["b"] = b
+        caso["c"] = c
+        caso["d"] = d
+        caso["x_eq"] = x_eq
+        caso["y_eq"] = y_eq
     
     tempos_lista = []
-    posicoes_lista = []
-    velocidades_lista = []
+    presas_lista = []
+    predadores_lista = []
     
     for caso in casos_teste:
         # verifica se o número de timesteps é compatível com o modelo
@@ -826,8 +880,8 @@ def interpola_trajetorias_avulsas_node(
         else:
             tempos = tempos_referencia
         
-        # entrada: [x0, v0]
-        X_caso = np.array([[caso["x0"], caso["v0"]]], dtype=np.float32)
+        # entrada: [x0, y0] - presas e predadores iniciais
+        X_caso = np.array([[caso["x0"], caso["y0"]]], dtype=np.float32)
         
         # normaliza a entrada
         X_caso_scaled = scaler_X.transform(X_caso)
@@ -840,39 +894,41 @@ def interpola_trajetorias_avulsas_node(
         # desnormaliza a trajetória completa
         predictions = scaler_y.inverse_transform(predictions_scaled)
         
-        # separa posições e velocidades da trajetória completa
-        posicoes = predictions[0, 0::2]  # posições (índices pares)
-        velocidades = predictions[0, 1::2]  # velocidades (índices ímpares)
+        # separa presas e predadores da trajetória completa
+        presas = predictions[0, 0::2]  # presas (índices pares)
+        predadores = predictions[0, 1::2]  # predadores (índices ímpares)
         
         # se os tempos não têm o mesmo tamanho, ajusta
-        if len(posicoes) != len(tempos):
-            print(f"  AVISO: {caso['nome']} - Ajustando tempos para {len(posicoes)} pontos")
-            tempos = np.linspace(tempos[0], tempos[-1], len(posicoes))
+        if len(presas) != len(tempos):
+            print(f"  AVISO: {caso['nome']} - Ajustando tempos para {len(presas)} pontos")
+            tempos = np.linspace(tempos[0], tempos[-1], len(presas))
         
         tempos_lista.append(tempos)
-        posicoes_lista.append(posicoes)
-        velocidades_lista.append(velocidades)
+        presas_lista.append(presas)
+        predadores_lista.append(predadores)
         
-        caso["num_pontos"] = len(posicoes)
+        caso["num_pontos"] = len(presas)
         caso["dt"] = tempos[1] - tempos[0] if len(tempos) > 1 else 0
     
     print("\n=== INTERPOLAÇÃO DE TRAJETÓRIAS AVULSAS ===")
+    print(f"  Parâmetros do sistema: a={a:.2f}, b={b:.2f}, c={c:.2f}, d={d:.2f}")
+    print(f"  Ponto de equilíbrio: x*={x_eq:.2f}, y*={y_eq:.2f}")
     for caso in casos_teste:
-        print(f"    {caso['nome']}: x0={caso['x0']:.1f} m, v0={caso['v0']:.1f} m/s, ω={caso['omega']:.1f} rad/s")
+        print(f"    {caso['nome']}: x0={caso['x0']:.1f}, y0={caso['y0']:.1f}")
     
     fig_completo = cria_grafico_interpolacao_completo(
         tempos_lista=tempos_lista,
-        posicoes_lista=posicoes_lista,
-        velocidades_lista=velocidades_lista,
+        presas_lista=presas_lista,
+        predadores_lista=predadores_lista,
         casos_info=casos_teste,
-        titulo="Interpolação Avulsa: Posição e Velocidade vs Tempo"
+        titulo="Interpolação Avulsa: Presas e Predadores vs Tempo - Lotka-Volterra"
     )
     
     fig_fases = cria_grafico_interpolacao_espaco_fases(
-        posicoes_lista=posicoes_lista,
-        velocidades_lista=velocidades_lista,
+        presas_lista=presas_lista,
+        predadores_lista=predadores_lista,
         casos_info=casos_teste,
-        titulo="Interpolação Avulsa: Espaço de Fases"
+        titulo="Interpolação Avulsa: Espaço de Fases - Lotka-Volterra"
     )
     
     fig_completo.write_html(grafico_interpolacao_completa)
@@ -894,7 +950,7 @@ def interpolacoes_pontuais_mlp_node(
     Node: Usa o modelo treinado para fazer interpolação entre pontos de dados gerados aleatoriamente.
     Faz previsões de trajetórias completas a partir de condições iniciais aleatórias.
     Nota: A interpolação é feita dentro da mesma trajetória, variando apenas o tempo.
-    A frequência angular é constante.
+    Os parâmetros do sistema (a, b, c, d) são constantes.
     
     Args:
         model: Modelo MLP treinado (prevê trajetórias completas)
@@ -915,20 +971,30 @@ def interpolacoes_pontuais_mlp_node(
     
     grafico_interpolacao_pontual = f"{output_dir}/interpolacoes_pontuais_real_previsto_mlp.html"
     grafico_interpolacao_pontual_espaco_fases = f"{output_dir}/interpolacao_pontual_espaco_fases.html"
-    grafico_interpolacao_pontual_temporal = f"{output_dir}/interpolacao_pontual_v_x_vs_t.html"
+    grafico_interpolacao_pontual_temporal = f"{output_dir}/interpolacao_pontual_presas_predadores_vs_t.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
     
     intervals = parameters.get('intervals', {})
-    omega_fixo = intervals.get('omega', 5.0)
     seed = parameters.get('seed', 42)
+    
+    a = intervals.get('taxa_crescimento', 2.0)
+    b = intervals.get('taxa_predacao', 0.5)
+    c = intervals.get('taxa_mortalidade', 1.0)
+    d = intervals.get('taxa_eficiencia', 0.2)
+    
+    # ponto de equilíbrio
+    x_eq = c / d
+    y_eq = a / b
     
     # fixa a semente para reprodutibilidade
     np.random.seed(seed)
     
-    print("\n=== INTERPOLAÇÃO PONTUAL ===")
+    print("\n=== INTERPOLAÇÃO PONTUAL - LOTKA-VOLTERRA ===")
+    print(f"  Parâmetros do sistema: a={a:.2f}, b={b:.2f}, c={c:.2f}, d={d:.2f}")
+    print(f"  Ponto de equilíbrio: x*={x_eq:.2f}, y*={y_eq:.2f}")
     print("\n  A interpolação é feita variando o tempo para uma mesma trajetória")
     
     # ============================================
@@ -936,37 +1002,52 @@ def interpolacoes_pontuais_mlp_node(
     # ============================================
     
     # limites dos intervalos dos parâmetros
-    x0_min = intervals.get('x0_min', -0.5)
-    x0_max = intervals.get('x0_max', 0.5)
-    v0_min = intervals.get('v0_min', -1.0)
-    v0_max = intervals.get('v0_max', 1.0)
+    x0_min = intervals.get('x0_min', 0.5)
+    x0_max = intervals.get('x0_max', 3.0)
+    y0_min = intervals.get('y0_min', 0.3)
+    y0_max = intervals.get('y0_max', 2.0)
     
     # número de trajetórias a serem geradas
     num_trajetorias = 2
     
     print(f"\n  Gerando {num_trajetorias} trajetórias aleatórias:")
     print(f"    x0 no intervalo [{x0_min:.3f}, {x0_max:.3f}]")
-    print(f"    v0 no intervalo [{v0_min:.3f}, {v0_max:.3f}]")
+    print(f"    y0 no intervalo [{y0_min:.3f}, {y0_max:.3f}]")
     
     # gera condições iniciais aleatórias
     x0_values = np.random.uniform(x0_min, x0_max, num_trajetorias)
-    v0_values = np.random.uniform(v0_min, v0_max, num_trajetorias)
+    y0_values = np.random.uniform(y0_min, y0_max, num_trajetorias)
     
-    # Define o número de pontos baseado nos tempos de referência ou padrão
+    # número de pontos baseado nos tempos de referência ou padrão
     if tempos_referencia is not None:
         num_pontos_por_trajetoria = len(tempos_referencia)
         tempos_interpolados = tempos_referencia
+        # tempo_maximo baseado nos tempos de referência
+        tempo_maximo = tempos_interpolados[-1]
+        dt_interpolacao = tempos_interpolados[1] - tempos_interpolados[0] if len(tempos_interpolados) > 1 else 0.01
         print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+        print(f"  Tempo máximo: {tempo_maximo:.3f} s")
+        print(f"  Passo temporal: {dt_interpolacao:.6f} s")
     else:
-        # calcula o período do sistema
-        T = 2 * np.pi / omega_fixo
-        tempo_maximo = T  # 1 período completo
-        num_pontos_por_trajetoria = 1000
-        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        osc_temp = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d]
+        )
+        T_aprox = osc_temp.periodos.cpu().numpy()[0]
+        
+        sim_params = parameters.get('simulation', {})
+        dt = sim_params.get('dt', 0.01)
+        num_periodos = sim_params.get('num_periodos', 3)
+        tempo_maximo = num_periodos * T_aprox
+        num_pontos_por_trajetoria = int(tempo_maximo / dt) + 1
         tempos_interpolados = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        dt_interpolacao = tempos_interpolados[1] - tempos_interpolados[0]
+        
         print(f"\n  Configuração da interpolação:")
-        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-        print(f"    Período: {T:.3f} s")
+        print(f"    Período aproximado: {T_aprox:.3f} s")
+        print(f"    Tempo máximo: {tempo_maximo:.3f} s")
         print(f"    Passo temporal: {dt_interpolacao:.6f} s")
         print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
@@ -975,64 +1056,77 @@ def interpolacoes_pontuais_mlp_node(
     
     # listas para o gráfico temporal
     tempos_lista = []
-    posicoes_previstas_lista = []
-    velocidades_previstas_lista = []
-    posicoes_reais_lista = []
-    velocidades_reais_lista = []
+    presas_previstas_lista = []
+    predadores_previstos_lista = []
+    presas_reais_lista = []
+    predadores_reais_lista = []
     casos_info_lista = []
     dados_interpolados = []
     
     for idx in range(num_trajetorias):
         x0 = x0_values[idx]
-        v0 = v0_values[idx]
+        y0 = y0_values[idx]
         
-        print(f"\n  Processando trajetória {idx}: x0={x0:.3f}, v0={v0:.3f}")
+        print(f"\n  Processando trajetória {idx}: x0={x0:.3f}, y0={y0:.3f}")
         
-        # solução analítica para validação
-        pos_reais_interpolados = x0 * np.cos(omega_fixo * tempos_interpolados) + \
-                                 (v0 / omega_fixo) * np.sin(omega_fixo * tempos_interpolados)
-        vel_reais_interpolados = -x0 * omega_fixo * np.sin(omega_fixo * tempos_interpolados) + \
-                                 v0 * np.cos(omega_fixo * tempos_interpolados)
+        # para o Lotka-Volterra não temos solução analítica simples,
+        # então usamos a simulação RK4 para gerar a solução "real"
+        osc = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d],
+            device='cpu'
+        )
         
-        # Prepara entrada para o modelo: apenas [x0, v0] (sem tempo)
-        # O modelo prevê a trajetória completa de uma só vez
-        X_interpolado = np.array([[x0, v0]], dtype=np.float32)
+        cond_curta = torch.tensor([[x0, y0]], dtype=torch.float32)
+        solucao_curta = osc.resolve_multi_condicoes_sistemas(
+            condicoes_iniciais=cond_curta,
+            t_final=tempo_maximo,
+            dt=dt_interpolacao
+        )
         
-        # Normaliza e faz previsão
+        # valores reais da simulação
+        presas_reais_interpolados = solucao_curta['presas'][:, 0, 0]
+        predadores_reais_interpolados = solucao_curta['predadores'][:, 0, 0]
+        tempos_reais = solucao_curta['tempo']
+        
+        if len(tempos_reais) != len(tempos_interpolados):
+            interp_presas = interp1d(tempos_reais, presas_reais_interpolados, kind='linear', fill_value='extrapolate')
+            interp_predadores = interp1d(tempos_reais, predadores_reais_interpolados, kind='linear', fill_value='extrapolate')
+            presas_reais_interpolados = interp_presas(tempos_interpolados)
+            predadores_reais_interpolados = interp_predadores(tempos_interpolados)
+        
+        X_interpolado = np.array([[x0, y0]], dtype=np.float32)
+        
         X_interpolado_scaled = scaler_X.transform(X_interpolado)
         X_tensor = torch.tensor(X_interpolado_scaled, dtype=torch.float32).to(device)
         
         with torch.no_grad():
             pred_scaled = model(X_tensor).cpu().numpy()
         
-        # Desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        # Separa posições e velocidades da trajetória completa
-        # A saída está no formato: [x0, v0, x1, v1, ..., xN, vN]
-        posicoes_previstas = pred[0, 0::2]  # Pega as posições (índices pares)
-        velocidades_previstas = pred[0, 1::2]  # Pega as velocidades (índices ímpares)
+        # separa presas e predadores da trajetória completa
+        # a saída está no formato: [x0, y0, x1, y1, ..., xN, yN]
+        presas_previstas = pred[0, 0::2]  # Pega as presas (índices pares)
+        predadores_previstos = pred[0, 1::2]  # Pega os predadores (índices ímpares)
         
-        # Verifica se o número de pontos coincide
-        if len(posicoes_previstas) != len(tempos_interpolados):
-            print(f"    AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
-            tempos_ajustados = np.linspace(tempos_interpolados[0], tempos_interpolados[-1], len(posicoes_previstas))
+        if len(presas_previstas) != len(tempos_interpolados):
+            print(f"    AVISO: Ajustando tempos para {len(presas_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_interpolados[0], tempos_interpolados[-1], len(presas_previstas))
         else:
             tempos_ajustados = tempos_interpolados
         
-        # Armazena para métricas globais (ponto a ponto para compatibilidade)
-        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
-        real_pontos = np.column_stack([pos_reais_interpolados, vel_reais_interpolados])
+        pred_pontos = np.column_stack([presas_previstas, predadores_previstos])
+        real_pontos = np.column_stack([presas_reais_interpolados, predadores_reais_interpolados])
         
-        # Se houver diferença no número de pontos, ajusta
-        if len(posicoes_previstas) != len(pos_reais_interpolados):
-            # Interpola os valores reais para o mesmo número de pontos
-            from scipy.interpolate import interp1d
-            interp_pos = interp1d(tempos_interpolados, pos_reais_interpolados, kind='linear', fill_value='extrapolate')
-            interp_vel = interp1d(tempos_interpolados, vel_reais_interpolados, kind='linear', fill_value='extrapolate')
-            pos_reais_ajustados = interp_pos(tempos_ajustados)
-            vel_reais_ajustados = interp_vel(tempos_ajustados)
-            real_pontos = np.column_stack([pos_reais_ajustados, vel_reais_ajustados])
+        if len(presas_previstas) != len(presas_reais_interpolados):
+            interp_presas = interp1d(tempos_interpolados, presas_reais_interpolados, kind='linear', fill_value='extrapolate')
+            interp_predadores = interp1d(tempos_interpolados, predadores_reais_interpolados, kind='linear', fill_value='extrapolate')
+            presas_reais_ajustados = interp_presas(tempos_ajustados)
+            predadores_reais_ajustados = interp_predadores(tempos_ajustados)
+            real_pontos = np.column_stack([presas_reais_ajustados, predadores_reais_ajustados])
             tempos_para_grafico = tempos_ajustados
         else:
             tempos_para_grafico = tempos_interpolados
@@ -1040,38 +1134,40 @@ def interpolacoes_pontuais_mlp_node(
         todas_previsoes.append(pred_pontos)
         todos_reais_interpolados.append(real_pontos)
         
-        # Armazena informações para gráfico temporal
         tempos_lista.append(tempos_para_grafico)
-        posicoes_previstas_lista.append(posicoes_previstas)
-        velocidades_previstas_lista.append(velocidades_previstas)
-        posicoes_reais_lista.append(pos_reais_interpolados[:len(tempos_para_grafico)])
-        velocidades_reais_lista.append(vel_reais_interpolados[:len(tempos_para_grafico)])
+        presas_previstas_lista.append(presas_previstas)
+        predadores_previstos_lista.append(predadores_previstos)
+        presas_reais_lista.append(presas_reais_interpolados[:len(tempos_para_grafico)])
+        predadores_reais_lista.append(predadores_reais_interpolados[:len(tempos_para_grafico)])
         
         cor = CORES_PALETA[idx % len(CORES_PALETA)]
         
         casos_info_lista.append({
             'x0': x0,
-            'v0': v0,
-            'omega': omega_fixo,
+            'y0': y0,
             'cor': cor
         })
         
-        # Registros para o DataFrame
         for k in range(len(tempos_para_grafico)):
             dados_interpolados.append({
-                'id_trajetoria': f"x0_{x0:.3f}_v0_{v0:.3f}",
+                'id_trajetoria': f"x0_{x0:.3f}_y0_{y0:.3f}",
                 'x0': x0,
-                'v0': v0,
-                'omega': omega_fixo,
+                'y0': y0,
+                'taxa_crescimento_a': a,
+                'taxa_predacao_b': b,
+                'taxa_mortalidade_c': c,
+                'taxa_eficiencia_d': d,
+                'presas_eq': x_eq,
+                'predadores_eq': y_eq,
                 'tempo_interpolado': tempos_para_grafico[k],
-                'posicao_analitica': real_pontos[k, 0],
-                'velocidade_analitica': real_pontos[k, 1],
-                'posicao_prevista_mlp': pred_pontos[k, 0],
-                'velocidade_prevista_mlp': pred_pontos[k, 1],
-                'erro_posicao': pred_pontos[k, 0] - real_pontos[k, 0],
-                'erro_velocidade': pred_pontos[k, 1] - real_pontos[k, 1],
-                'erro_abs_posicao': abs(pred_pontos[k, 0] - real_pontos[k, 0]),
-                'erro_abs_velocidade': abs(pred_pontos[k, 1] - real_pontos[k, 1]),
+                'presas_real': real_pontos[k, 0],
+                'predadores_real': real_pontos[k, 1],
+                'presas_previsto_mlp': pred_pontos[k, 0],
+                'predadores_previsto_mlp': pred_pontos[k, 1],
+                'erro_presas': pred_pontos[k, 0] - real_pontos[k, 0],
+                'erro_predadores': pred_pontos[k, 1] - real_pontos[k, 1],
+                'erro_abs_presas': abs(pred_pontos[k, 0] - real_pontos[k, 0]),
+                'erro_abs_predadores': abs(pred_pontos[k, 1] - real_pontos[k, 1]),
             })
     
     if len(todas_previsoes) == 0:
@@ -1081,16 +1177,16 @@ def interpolacoes_pontuais_mlp_node(
     predictions_all = np.vstack(todas_previsoes)
     y_true_all = np.vstack(todos_reais_interpolados)
     
-    rmse_pos = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
-    rmse_vel = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
-    r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
-    r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
+    rmse_presas = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
+    rmse_predadores = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
+    r2_presas = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
+    r2_predadores = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
     
     print(f"\n  Total de pontos interpolados: {len(predictions_all)}")
-    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
-    print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
-    print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
-    print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
+    print(f"  RMSE Presas (vs solução RK4): {rmse_presas:.6f}")
+    print(f"  RMSE Predadores (vs solução RK4): {rmse_predadores:.6f}")
+    print(f"  R² Presas (vs solução RK4): {r2_presas:.4f}")
+    print(f"  R² Predadores (vs solução RK4): {r2_predadores:.4f}")
     
     # ============================================
     # GRÁFICO 1: Real vs Previsto
@@ -1099,7 +1195,7 @@ def interpolacoes_pontuais_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação Pontual: Solução Analítica vs MLP - Dados Gerados Aleatoriamente"
+        titulo="Interpolação Pontual: RK4 vs MLP - Dados Gerados Aleatoriamente - Lotka-Volterra"
     )
     
     fig1.write_html(grafico_interpolacao_pontual)
@@ -1108,33 +1204,33 @@ def interpolacoes_pontuais_mlp_node(
     # GRÁFICO 2: Espaço de Fases
     # ============================================
     
-    y_pos_true = y_true_all[:, 0].reshape(-1, 1)
-    y_vel_true = y_true_all[:, 1].reshape(-1, 1)
-    y_pos_pred = predictions_all[:, 0].reshape(-1, 1)
-    y_vel_pred = predictions_all[:, 1].reshape(-1, 1)
+    y_presas_true = y_true_all[:, 0].reshape(-1, 1)
+    y_predadores_true = y_true_all[:, 1].reshape(-1, 1)
+    y_presas_pred = predictions_all[:, 0].reshape(-1, 1)
+    y_predadores_pred = predictions_all[:, 1].reshape(-1, 1)
     
     fig2 = cria_grafico_interpolacao_pontual_espaco_fases(
-        y_pos_true=y_pos_true,
-        y_vel_true=y_vel_true,
-        y_pos_pred=y_pos_pred,
-        y_vel_pred=y_vel_pred,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Espaço de Fases"
+        y_pos_true=y_presas_true,
+        y_vel_true=y_predadores_true,
+        y_pos_pred=y_presas_pred,
+        y_vel_pred=y_predadores_pred,
+        titulo="Interpolação Pontual: MLP vs RK4 - Espaço de Fases - Lotka-Volterra"
     )
     
     fig2.write_html(grafico_interpolacao_pontual_espaco_fases)
     
     # ============================================
-    # GRÁFICO 3: Posição e Velocidade vs Tempo
+    # GRÁFICO 3: Presas e Predadores vs Tempo
     # ============================================
     
     fig3 = cria_grafico_interpolacao_pontual_completo(
         tempos_lista=tempos_lista,
-        posicoes_previstas_lista=posicoes_previstas_lista,
-        velocidades_previstas_lista=velocidades_previstas_lista,
-        posicoes_reais_lista=posicoes_reais_lista,
-        velocidades_reais_lista=velocidades_reais_lista,
+        posicoes_previstas_lista=presas_previstas_lista,
+        velocidades_previstas_lista=predadores_previstos_lista,
+        posicoes_reais_lista=presas_reais_lista,
+        velocidades_reais_lista=predadores_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação Pontual: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        titulo="Interpolação Pontual: MLP vs RK4 - Presas e Predadores vs Tempo - Lotka-Volterra"
     )
     
     fig3.write_html(grafico_interpolacao_pontual_temporal)
@@ -1145,20 +1241,25 @@ def interpolacoes_pontuais_mlp_node(
     
     df_interpolado = pd.DataFrame(dados_interpolados)
     
-    df_interpolado.attrs['rmse_posicao'] = rmse_pos
-    df_interpolado.attrs['rmse_velocidade'] = rmse_vel
-    df_interpolado.attrs['r2_posicao'] = r2_pos
-    df_interpolado.attrs['r2_velocidade'] = r2_vel
+    df_interpolado.attrs['rmse_presas'] = rmse_presas
+    df_interpolado.attrs['rmse_predadores'] = rmse_predadores
+    df_interpolado.attrs['r2_presas'] = r2_presas
+    df_interpolado.attrs['r2_predadores'] = r2_predadores
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_trajetorias'] = num_trajetorias
     df_interpolado.attrs['pontos_por_trajetoria'] = num_pontos_por_trajetoria
-    df_interpolado.attrs['omega_fixo'] = omega_fixo
-    df_interpolado.attrs['tempo_maximo'] = tempo_maximo if tempos_referencia is None else tempos_referencia[-1]
-    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao if tempos_referencia is None else tempos_referencia[1] - tempos_referencia[0]
+    df_interpolado.attrs['taxa_crescimento_a'] = a
+    df_interpolado.attrs['taxa_predacao_b'] = b
+    df_interpolado.attrs['taxa_mortalidade_c'] = c
+    df_interpolado.attrs['taxa_eficiencia_d'] = d
+    df_interpolado.attrs['presas_eq'] = x_eq
+    df_interpolado.attrs['predadores_eq'] = y_eq
+    df_interpolado.attrs['tempo_maximo'] = tempo_maximo
+    df_interpolado.attrs['dt_interpolacao'] = dt_interpolacao
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
-    df_interpolado.attrs['v0_min'] = v0_min
-    df_interpolado.attrs['v0_max'] = v0_max
+    df_interpolado.attrs['y0_min'] = y0_min
+    df_interpolado.attrs['y0_max'] = y0_max
     
     print(f"\n  Base de dados com interpolação temporal dentro de {num_trajetorias} trajetórias gerada com {len(df_interpolado)} registros")
     
@@ -1174,7 +1275,7 @@ def interpola_entre_trajetorias_mlp_node(
 ) -> pd.DataFrame:
     """
     Node: Usa o modelo treinado para fazer interpolação entre trajetórias.
-    Para cada instante de tempo, interpola entre duas trajetórias diferentes (variando x0 e v0).
+    Para cada instante de tempo, interpola entre duas trajetórias diferentes (variando x0 e y0).
     Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
     Agora prevê trajetórias completas a partir das condições iniciais.
     """
@@ -1187,19 +1288,29 @@ def interpola_entre_trajetorias_mlp_node(
     
     grafico_interpolacao_entre_trajetorias = f"{output_dir}/interpolacoes_entre_trajetorias_real_previsto_mlp.html"
     grafico_interpolacao_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases.html"
-    grafico_interpolacao_entre_trajetorias_temporal = f"{output_dir}/interpolacao_entre_trajetorias_v_x_vs_t.html"
+    grafico_interpolacao_entre_trajetorias_temporal = f"{output_dir}/interpolacao_entre_trajetorias_presas_predadores_vs_t.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
     
     intervals = parameters.get('intervals', {})
-    omega_fixo = intervals.get('omega', 5.0)
+    
+    a = intervals.get('taxa_crescimento', 2.0)
+    b = intervals.get('taxa_predacao', 0.5)
+    c = intervals.get('taxa_mortalidade', 1.0)
+    d = intervals.get('taxa_eficiencia', 0.2)
+    
+    # ponto de equilíbrio
+    x_eq = c / d
+    y_eq = a / b
     
     seed = parameters.get('seed', 42)
     np.random.seed(seed)
     
-    print("\n=== INTERPOLAÇÃO ENTRE TRAJETÓRIAS ===")
+    print("\n=== INTERPOLAÇÃO ENTRE TRAJETÓRIAS - LOTKA-VOLTERRA ===")
+    print(f"  Parâmetros do sistema: a={a:.2f}, b={b:.2f}, c={c:.2f}, d={d:.2f}")
+    print(f"  Ponto de equilíbrio: x*={x_eq:.2f}, y*={y_eq:.2f}")
     print("\n  Para cada instante de tempo, interpola entre duas trajetórias diferentes")
     
     # ============================================
@@ -1207,69 +1318,83 @@ def interpola_entre_trajetorias_mlp_node(
     # ============================================
     
     # limites dos intervalos dos parâmetros
-    x0_min = intervals.get('x0_min', -0.5)
-    x0_max = intervals.get('x0_max', 0.5)
-    v0_min = intervals.get('v0_min', -1.0)
-    v0_max = intervals.get('v0_max', 1.0)
+    x0_min = intervals.get('x0_min', 0.5)
+    x0_max = intervals.get('x0_max', 3.0)
+    y0_min = intervals.get('y0_min', 0.3)
+    y0_max = intervals.get('y0_max', 2.0)
     
     # define o número de pontos baseado nos tempos de referência ou padrão
     if tempos_referencia is not None:
         num_pontos_por_trajetoria = len(tempos_referencia)
         tempos_unicos = tempos_referencia
+        tempo_maximo = tempos_unicos[-1]
+        dt_interpolacao = tempos_unicos[1] - tempos_unicos[0] if len(tempos_unicos) > 1 else 0.01
         print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+        print(f"  Tempo máximo: {tempo_maximo:.3f} s")
     else:
-        # calcula o período do sistema
-        T = 2 * np.pi / omega_fixo
-        tempo_maximo = T  # 1 período completo
-        num_pontos_por_trajetoria = 1000
-        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        osc_temp = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d]
+        )
+        T_aprox = osc_temp.periodos.cpu().numpy()[0]
+        
+        sim_params = parameters.get('simulation', {})
+        dt = sim_params.get('dt', 0.01)
+        num_periodos = sim_params.get('num_periodos', 3)
+        tempo_maximo = num_periodos * T_aprox
+        num_pontos_por_trajetoria = int(tempo_maximo / dt) + 1
         tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        dt_interpolacao = tempos_unicos[1] - tempos_unicos[0]
+        
         print(f"\n  Configuração da interpolação:")
-        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-        print(f"    Período: {T:.3f} s")
+        print(f"    Período aproximado: {T_aprox:.3f} s")
+        print(f"    Tempo máximo: {tempo_maximo:.3f} s")
         print(f"    Passo temporal: {dt_interpolacao:.6f} s")
         print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
-    # gera uma trajetória com amplitude pequena e outra com amplitude grande
-    # para garantir que sejam diferentes, geramos várias e selecionamos as extremas
+    # gera trajetórias com diferentes amplitudes (distância do equilíbrio)
     x0_candidates = np.random.uniform(x0_min, x0_max, 100)
-    v0_candidates = np.random.uniform(v0_min, v0_max, 100)
+    y0_candidates = np.random.uniform(y0_min, y0_max, 100)
     
-    amplitudes = np.sqrt(x0_candidates**2 + (v0_candidates / omega_fixo)**2)
+    # calcula distância do equilíbrio
+    distancias = np.sqrt((x0_candidates - x_eq)**2 + (y0_candidates - y_eq)**2)
     
-    # trajetória de menor amplitude
-    idx_pequena = np.argmin(amplitudes)
+    # trajetória de menor amplitude (mais próxima do equilíbrio)
+    idx_pequena = np.argmin(distancias)
     x0_1 = x0_candidates[idx_pequena]
-    v0_1 = v0_candidates[idx_pequena]
+    y0_1 = y0_candidates[idx_pequena]
     
-    # trajetória de maior amplitude
-    idx_grande = np.argmax(amplitudes)
+    # trajetória de maior amplitude (mais distante do equilíbrio)
+    idx_grande = np.argmax(distancias)
     x0_2 = x0_candidates[idx_grande]
-    v0_2 = v0_candidates[idx_grande]
+    y0_2 = y0_candidates[idx_grande]
     
-    print(f"\n  Trajetória 1: x0={x0_1:.3f} m, v0={v0_1:.3f} m/s")
-    print(f"  Trajetória 2: x0={x0_2:.3f} m, v0={v0_2:.3f} m/s")
+    print(f"\n  Trajetória 1 (próxima ao equilíbrio): x0={x0_1:.3f}, y0={y0_1:.3f}")
+    print(f"  Trajetória 2 (distante do equilíbrio): x0={x0_2:.3f}, y0={y0_2:.3f}")
+    print(f"  Distâncias do equilíbrio: d1={distancias[idx_pequena]:.3f}, d2={distancias[idx_grande]:.3f}")
     
     # define os níveis de interpolação
-    alphas = np.linspace(0, 1, 3)
+    alphas = np.linspace(0, 1, 5)  # 5 níveis de interpolação
     
     todas_previsoes = []
     todos_reais_interpolados = []
     
     tempos_lista = []
-    posicoes_previstas_lista = []
-    velocidades_previstas_lista = []
-    posicoes_reais_lista = []
-    velocidades_reais_lista = []
+    presas_previstas_lista = []
+    predadores_previstos_lista = []
+    presas_reais_lista = []
+    predadores_reais_lista = []
     casos_info_lista = []
     dados_interpolados = []
     
     for alpha in alphas:
         x0_interp = (1 - alpha) * x0_1 + alpha * x0_2
-        v0_interp = (1 - alpha) * v0_1 + alpha * v0_2
+        y0_interp = (1 - alpha) * y0_1 + alpha * y0_2
         
-        # entrada para o modelo: x0, v0
-        X_interpolado = np.array([[x0_interp, v0_interp]], dtype=np.float32)
+        # entrada para o modelo: x0, y0
+        X_interpolado = np.array([[x0_interp, y0_interp]], dtype=np.float32)
         
         # normaliza e faz previsão
         X_interpolado_scaled = scaler_X.transform(X_interpolado)
@@ -1281,35 +1406,57 @@ def interpola_entre_trajetorias_mlp_node(
         # desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        # separa posições e velocidades da trajetória completa
-        # a saída está no formato: [x0, v0, x1, v1, ..., xN, vN]
-        posicoes_previstas = pred[0, 0::2]  # posições (índices pares)
-        velocidades_previstas = pred[0, 1::2]  # velocidades (índices ímpares)
+        # separa presas e predadores da trajetória completa
+        # a saída está no formato: [x0, y0, x1, y1, ..., xN, yN]
+        presas_previstas = pred[0, 0::2]  # presas (índices pares)
+        predadores_previstos = pred[0, 1::2]  # predadores (índices ímpares)
         
         # verifica se o número de pontos coincide com os tempos
-        if len(posicoes_previstas) != len(tempos_unicos):
-            print(f"  AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
-            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(posicoes_previstas))
+        if len(presas_previstas) != len(tempos_unicos):
+            print(f"  AVISO: Ajustando tempos para {len(presas_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(presas_previstas))
         else:
             tempos_ajustados = tempos_unicos
         
-        # solução analítica para validação
-        pos_analitico = x0_interp * np.cos(omega_fixo * tempos_ajustados) + \
-                        (v0_interp / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
-        vel_analitico = -x0_interp * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
-                        v0_interp * np.cos(omega_fixo * tempos_ajustados)
+        osc = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d],
+            device='cpu'
+        )
         
-        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
-        real_pontos = np.column_stack([pos_analitico, vel_analitico])
+        cond_curta = torch.tensor([[x0_interp, y0_interp]], dtype=torch.float32)
+        solucao_curta = osc.resolve_multi_condicoes_sistemas(
+            condicoes_iniciais=cond_curta,
+            t_final=tempo_maximo,
+            dt=dt_interpolacao
+        )
+        
+        presas_reais = solucao_curta['presas'][:, 0, 0]
+        predadores_reais = solucao_curta['predadores'][:, 0, 0]
+        tempos_reais = solucao_curta['tempo']
+        
+        if len(tempos_reais) != len(tempos_ajustados):
+            interp_presas = interp1d(tempos_reais, presas_reais, kind='linear', fill_value='extrapolate')
+            interp_predadores = interp1d(tempos_reais, predadores_reais, kind='linear', fill_value='extrapolate')
+            presas_reais_ajustados = interp_presas(tempos_ajustados)
+            predadores_reais_ajustados = interp_predadores(tempos_ajustados)
+        else:
+            presas_reais_ajustados = presas_reais
+            predadores_reais_ajustados = predadores_reais
+        
+        pred_pontos = np.column_stack([presas_previstas, predadores_previstos])
+        real_pontos = np.column_stack([presas_reais_ajustados, predadores_reais_ajustados])
         
         todas_previsoes.append(pred_pontos)
         todos_reais_interpolados.append(real_pontos)
         
         tempos_lista.append(tempos_ajustados)
-        posicoes_previstas_lista.append(posicoes_previstas)
-        velocidades_previstas_lista.append(velocidades_previstas)
-        posicoes_reais_lista.append(pos_analitico)
-        velocidades_reais_lista.append(vel_analitico)
+        presas_previstas_lista.append(presas_previstas)
+        predadores_previstos_lista.append(predadores_previstos)
+        presas_reais_lista.append(presas_reais_ajustados)
+        predadores_reais_lista.append(predadores_reais_ajustados)
         
         cor_idx = int(alpha * (len(CORES_PALETA) - 1))
         cor = CORES_PALETA[cor_idx]
@@ -1317,8 +1464,7 @@ def interpola_entre_trajetorias_mlp_node(
         casos_info_lista.append({
             'alpha': alpha,
             'x0': x0_interp,
-            'v0': v0_interp,
-            'omega': omega_fixo,
+            'y0': y0_interp,
             'cor': cor
         })
         
@@ -1326,23 +1472,28 @@ def interpola_entre_trajetorias_mlp_node(
             dados_interpolados.append({
                 'alpha_interpolacao': alpha,
                 'x0_original_1': x0_1,
-                'v0_original_1': v0_1,
+                'y0_original_1': y0_1,
                 'x0_original_2': x0_2,
-                'v0_original_2': v0_2,
+                'y0_original_2': y0_2,
                 'x0_interpolado': x0_interp,
-                'v0_interpolado': v0_interp,
-                'omega': omega_fixo,
+                'y0_interpolado': y0_interp,
+                'taxa_crescimento_a': a,
+                'taxa_predacao_b': b,
+                'taxa_mortalidade_c': c,
+                'taxa_eficiencia_d': d,
+                'presas_eq': x_eq,
+                'predadores_eq': y_eq,
                 'tempo': tempos_ajustados[k],
-                'posicao_analitica': pos_analitico[k],
-                'velocidade_analitica': vel_analitico[k],
-                'posicao_prevista_mlp': pred_pontos[k, 0],
-                'velocidade_prevista_mlp': pred_pontos[k, 1],
-                'erro_posicao': pred_pontos[k, 0] - pos_analitico[k],
-                'erro_velocidade': pred_pontos[k, 1] - vel_analitico[k],
-                'erro_abs_posicao': abs(pred_pontos[k, 0] - pos_analitico[k]),
-                'erro_abs_velocidade': abs(pred_pontos[k, 1] - vel_analitico[k]),
-                'erro_rel_posicao_pct': (abs(pred_pontos[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
-                'erro_rel_velocidade_pct': (abs(pred_pontos[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
+                'presas_real': presas_reais_ajustados[k],
+                'predadores_real': predadores_reais_ajustados[k],
+                'presas_previsto_mlp': pred_pontos[k, 0],
+                'predadores_previsto_mlp': pred_pontos[k, 1],
+                'erro_presas': pred_pontos[k, 0] - presas_reais_ajustados[k],
+                'erro_predadores': pred_pontos[k, 1] - predadores_reais_ajustados[k],
+                'erro_abs_presas': abs(pred_pontos[k, 0] - presas_reais_ajustados[k]),
+                'erro_abs_predadores': abs(pred_pontos[k, 1] - predadores_reais_ajustados[k]),
+                'erro_rel_presas_pct': (abs(pred_pontos[k, 0] - presas_reais_ajustados[k]) / (abs(presas_reais_ajustados[k]) + 1e-6)) * 100,
+                'erro_rel_predadores_pct': (abs(pred_pontos[k, 1] - predadores_reais_ajustados[k]) / (abs(predadores_reais_ajustados[k]) + 1e-6)) * 100,
             })
     
     if len(todas_previsoes) == 0:
@@ -1352,16 +1503,16 @@ def interpola_entre_trajetorias_mlp_node(
     predictions_all = np.vstack(todas_previsoes)
     y_true_all = np.vstack(todos_reais_interpolados)
     
-    rmse_pos = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
-    rmse_vel = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
-    r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
-    r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
+    rmse_presas = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
+    rmse_predadores = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
+    r2_presas = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
+    r2_predadores = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
     
     print(f"\n  Total de pontos interpolados: {len(predictions_all)}")
-    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
-    print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
-    print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
-    print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
+    print(f"  RMSE Presas (vs solução RK4): {rmse_presas:.6f}")
+    print(f"  RMSE Predadores (vs solução RK4): {rmse_predadores:.6f}")
+    print(f"  R² Presas (vs solução RK4): {r2_presas:.4f}")
+    print(f"  R² Predadores (vs solução RK4): {r2_predadores:.4f}")
     
     # ============================================
     # GRÁFICO 1: Real vs Previsto
@@ -1370,7 +1521,7 @@ def interpola_entre_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Interpolação entre Trajetórias: Solução Analítica vs MLP"
+        titulo="Interpolação entre Trajetórias: RK4 vs MLP - Lotka-Volterra"
     )
     
     fig1.write_html(grafico_interpolacao_entre_trajetorias)
@@ -1379,33 +1530,33 @@ def interpola_entre_trajetorias_mlp_node(
     # GRÁFICO 2: Espaço de Fases
     # ============================================
     
-    y_pos_true = y_true_all[:, 0].reshape(-1, 1)
-    y_vel_true = y_true_all[:, 1].reshape(-1, 1)
-    y_pos_pred = predictions_all[:, 0].reshape(-1, 1)
-    y_vel_pred = predictions_all[:, 1].reshape(-1, 1)
+    y_presas_true = y_true_all[:, 0].reshape(-1, 1)
+    y_predadores_true = y_true_all[:, 1].reshape(-1, 1)
+    y_presas_pred = predictions_all[:, 0].reshape(-1, 1)
+    y_predadores_pred = predictions_all[:, 1].reshape(-1, 1)
     
     fig2 = cria_grafico_interpolacao_pontual_espaco_fases(
-        y_pos_true=y_pos_true,
-        y_vel_true=y_vel_true,
-        y_pos_pred=y_pos_pred,
-        y_vel_pred=y_vel_pred,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Espaço de Fases"
+        y_pos_true=y_presas_true,
+        y_vel_true=y_predadores_true,
+        y_pos_pred=y_presas_pred,
+        y_vel_pred=y_predadores_pred,
+        titulo="Interpolação entre Trajetórias: MLP vs RK4 - Espaço de Fases - Lotka-Volterra"
     )
     
     fig2.write_html(grafico_interpolacao_entre_trajetorias_espaco_fases)
     
     # ============================================
-    # GRÁFICO 3: Posição e Velocidade vs Tempo
+    # GRÁFICO 3: Presas e Predadores vs Tempo
     # ============================================
     
     fig3 = cria_grafico_interpolacao_pontual_completo(
         tempos_lista=tempos_lista,
-        posicoes_previstas_lista=posicoes_previstas_lista,
-        velocidades_previstas_lista=velocidades_previstas_lista,
-        posicoes_reais_lista=posicoes_reais_lista,
-        velocidades_reais_lista=velocidades_reais_lista,
+        posicoes_previstas_lista=presas_previstas_lista,
+        velocidades_previstas_lista=predadores_previstos_lista,
+        posicoes_reais_lista=presas_reais_lista,
+        velocidades_reais_lista=predadores_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Interpolação entre Trajetórias: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        titulo="Interpolação entre Trajetórias: MLP vs RK4 - Presas e Predadores vs Tempo - Lotka-Volterra"
     )
     
     fig3.write_html(grafico_interpolacao_entre_trajetorias_temporal)
@@ -1416,34 +1567,66 @@ def interpola_entre_trajetorias_mlp_node(
     
     df_interpolado = pd.DataFrame(dados_interpolados)
     
-    df_interpolado.attrs['rmse_posicao'] = rmse_pos
-    df_interpolado.attrs['rmse_velocidade'] = rmse_vel
-    df_interpolado.attrs['r2_posicao'] = r2_pos
-    df_interpolado.attrs['r2_velocidade'] = r2_vel
+    df_interpolado.attrs['rmse_presas'] = rmse_presas
+    df_interpolado.attrs['rmse_predadores'] = rmse_predadores
+    df_interpolado.attrs['r2_presas'] = r2_presas
+    df_interpolado.attrs['r2_predadores'] = r2_predadores
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_trajetorias'] = 2
     df_interpolado.attrs['num_alpha'] = len(alphas)
     df_interpolado.attrs['num_tempos'] = len(tempos_ajustados)
-    df_interpolado.attrs['omega_fixo'] = omega_fixo
+    df_interpolado.attrs['taxa_crescimento_a'] = a
+    df_interpolado.attrs['taxa_predacao_b'] = b
+    df_interpolado.attrs['taxa_mortalidade_c'] = c
+    df_interpolado.attrs['taxa_eficiencia_d'] = d
+    df_interpolado.attrs['presas_eq'] = x_eq
+    df_interpolado.attrs['predadores_eq'] = y_eq
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
-    df_interpolado.attrs['v0_min'] = v0_min
-    df_interpolado.attrs['v0_max'] = v0_max
+    df_interpolado.attrs['y0_min'] = y0_min
+    df_interpolado.attrs['y0_max'] = y0_max
     
     # ========================================================================
     # GRÁFICO 4: Trajetórias Originais e Interpoladas no Espaço de Fases
     # ========================================================================
     
-    # gera trajetórias originais analiticamente para o gráfico
-    pos_traj1 = x0_1 * np.cos(omega_fixo * tempos_ajustados) + \
-                (v0_1 / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
-    vel_traj1 = -x0_1 * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
-                v0_1 * np.cos(omega_fixo * tempos_ajustados)
+    osc1 = OsciladorLotkaVolterra(
+        taxas_crescimento=[a],
+        taxas_mortalidade=[c],
+        taxas_predacao=[b],
+        taxas_eficiencia=[d],
+        device='cpu'
+    )
     
-    pos_traj2 = x0_2 * np.cos(omega_fixo * tempos_ajustados) + \
-                (v0_2 / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
-    vel_traj2 = -x0_2 * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
-                v0_2 * np.cos(omega_fixo * tempos_ajustados)
+    cond1 = torch.tensor([[x0_1, y0_1]], dtype=torch.float32)
+    sol1 = osc1.resolve_multi_condicoes_sistemas(
+        condicoes_iniciais=cond1,
+        t_final=tempo_maximo,
+        dt=dt_interpolacao
+    )
+    presas_traj1 = sol1['presas'][:, 0, 0]
+    predadores_traj1 = sol1['predadores'][:, 0, 0]
+    tempos_reais1 = sol1['tempo']
+    
+    interp_presas1 = interp1d(tempos_reais1, presas_traj1, kind='linear', fill_value='extrapolate')
+    interp_predadores1 = interp1d(tempos_reais1, predadores_traj1, kind='linear', fill_value='extrapolate')
+    presas_traj1 = interp_presas1(tempos_ajustados)
+    predadores_traj1 = interp_predadores1(tempos_ajustados)
+    
+    cond2 = torch.tensor([[x0_2, y0_2]], dtype=torch.float32)
+    sol2 = osc1.resolve_multi_condicoes_sistemas(
+        condicoes_iniciais=cond2,
+        t_final=tempo_maximo,
+        dt=dt_interpolacao
+    )
+    presas_traj2 = sol2['presas'][:, 0, 0]
+    predadores_traj2 = sol2['predadores'][:, 0, 0]
+    tempos_reais2 = sol2['tempo']
+    
+    interp_presas2 = interp1d(tempos_reais2, presas_traj2, kind='linear', fill_value='extrapolate')
+    interp_predadores2 = interp1d(tempos_reais2, predadores_traj2, kind='linear', fill_value='extrapolate')
+    presas_traj2 = interp_presas2(tempos_ajustados)
+    predadores_traj2 = interp_predadores2(tempos_ajustados)
     
     # interpolações
     interpolacoes_para_grafico = []
@@ -1457,31 +1640,31 @@ def interpola_entre_trajetorias_mlp_node(
         dados_alpha = df_interpolado[mask_alpha].sort_values('tempo')
         
         x0_interp = dados_alpha['x0_interpolado'].iloc[0]
-        v0_interp = dados_alpha['v0_interpolado'].iloc[0]
+        y0_interp = dados_alpha['y0_interpolado'].iloc[0]
         
         interpolacoes_para_grafico.append({
             'alpha': alpha,
-            'posicoes': dados_alpha['posicao_prevista_mlp'].values,
-            'velocidades': dados_alpha['velocidade_prevista_mlp'].values,
+            'posicoes': dados_alpha['presas_previsto_mlp'].values,
+            'velocidades': dados_alpha['predadores_previsto_mlp'].values,
             'x0_interp': x0_interp,
-            'v0_interp': v0_interp
+            'v0_interp': y0_interp
         })
     
     casos_info_grafico = [{
         'x0_1': x0_1,
-        'v0_1': v0_1,
+        'v0_1': y0_1,
         'x0_2': x0_2,
-        'v0_2': v0_2
+        'v0_2': y0_2
     }]
     
     fig4 = cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
-        trajetoria1_pos=pos_traj1,
-        trajetoria1_vel=vel_traj1,
-        trajetoria2_pos=pos_traj2,
-        trajetoria2_vel=vel_traj2,
+        trajetoria1_pos=presas_traj1,
+        trajetoria1_vel=predadores_traj1,
+        trajetoria2_pos=presas_traj2,
+        trajetoria2_vel=predadores_traj2,
         interpolacoes_lista=interpolacoes_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Interpolação entre Trajetórias no Espaço de Fases"
+        titulo="Interpolação entre Trajetórias no Espaço de Fases - Lotka-Volterra"
     )
     
     grafico_entre_trajetorias_espaco_fases = f"{output_dir}/interpolacao_entre_trajetorias_espaco_fases_detalhado.html"
@@ -1501,7 +1684,7 @@ def interpola_trajetorias_mlp_node(
 ) -> pd.DataFrame:
     """
     Node: Usa o modelo treinado para gerar diferentes condições iniciais a partir de uma trajetória base.
-    A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e v0.
+    A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e y0.
     Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
     Agora prevê trajetórias completas a partir das condições iniciais.
     """
@@ -1514,26 +1697,34 @@ def interpola_trajetorias_mlp_node(
     
     grafico_interpolacao_trajetorias = f"{output_dir}/interpolacoes_trajetorias_real_previsto_mlp.html"
     grafico_interpolacao_trajetorias_espaco_fases = f"{output_dir}/interpolacao_trajetorias_espaco_fases.html"
-    grafico_interpolacao_trajetorias_temporal = f"{output_dir}/interpolacao_trajetorias_v_x_vs_t.html"
+    grafico_interpolacao_trajetorias_temporal = f"{output_dir}/interpolacao_trajetorias_presas_predadores_vs_t.html"
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
     
     intervals = parameters.get('intervals', {})
-    omega_fixo = intervals.get('omega', 5.0)
     
-    x0_min = intervals.get('x0_min', -0.5)
-    x0_max = intervals.get('x0_max', 0.5)
-    v0_min = intervals.get('v0_min', -1.0)
-    v0_max = intervals.get('v0_max', 1.0)
+    a = intervals.get('taxa_crescimento', 2.0)
+    b = intervals.get('taxa_predacao', 0.5)
+    c = intervals.get('taxa_mortalidade', 1.0)
+    d = intervals.get('taxa_eficiencia', 0.2)
+    
+    x_eq = c / d
+    y_eq = a / b
+    
+    x0_min = intervals.get('x0_min', 0.5)
+    x0_max = intervals.get('x0_max', 3.0)
+    y0_min = intervals.get('y0_min', 0.3)
+    y0_max = intervals.get('y0_max', 2.0)
     
     seed = parameters.get('seed', 42)
     np.random.seed(seed)
     
-    print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DA TRAJETÓRIA BASE ===")
-    print(f"  Frequência: {omega_fixo} rad/s")
-    print("  Gerando novas condições iniciais variando x0 e v0 dentro dos limites de treino do modelo")
+    print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DA TRAJETÓRIA BASE - LOTKA-VOLTERRA ===")
+    print(f"  Parâmetros do sistema: a={a:.2f}, b={b:.2f}, c={c:.2f}, d={d:.2f}")
+    print(f"  Ponto de equilíbrio: x*={x_eq:.2f}, y*={y_eq:.2f}")
+    print("  Gerando novas condições iniciais variando x0 e y0 dentro dos limites de treino do modelo")
     
     # ============================================
     # GERAÇÃO DE DADOS ALEATÓRIOS
@@ -1543,64 +1734,79 @@ def interpola_trajetorias_mlp_node(
     if tempos_referencia is not None:
         num_pontos_por_trajetoria = len(tempos_referencia)
         tempos_unicos = tempos_referencia
+        tempo_maximo = tempos_unicos[-1]
+        dt_interpolacao = tempos_unicos[1] - tempos_unicos[0] if len(tempos_unicos) > 1 else 0.01
         print(f"\n  Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria} pontos")
+        print(f"  Tempo máximo: {tempo_maximo:.3f} s")
     else:
-        # calcula o período do sistema
-        T = 2 * np.pi / omega_fixo
-        tempo_maximo = T  # 1 período completo
-        num_pontos_por_trajetoria = 1000
-        dt_interpolacao = tempo_maximo / (num_pontos_por_trajetoria - 1)
+        osc_temp = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d]
+        )
+        T_aprox = osc_temp.periodos.cpu().numpy()[0]
+        
+        sim_params = parameters.get('simulation', {})
+        dt = sim_params.get('dt', 0.01)
+        num_periodos = sim_params.get('num_periodos', 3)
+        tempo_maximo = num_periodos * T_aprox
+        num_pontos_por_trajetoria = int(tempo_maximo / dt) + 1
         tempos_unicos = np.linspace(0, tempo_maximo, num_pontos_por_trajetoria)
+        dt_interpolacao = tempos_unicos[1] - tempos_unicos[0]
+        
         print(f"\n  Configuração da interpolação:")
-        print(f"    Frequência angular: {omega_fixo:.3f} rad/s")
-        print(f"    Período: {T:.3f} s")
+        print(f"    Período aproximado: {T_aprox:.3f} s")
+        print(f"    Tempo máximo: {tempo_maximo:.3f} s")
         print(f"    Passo temporal: {dt_interpolacao:.6f} s")
         print(f"    Nós de saída do modelo por trajetória: {num_pontos_por_trajetoria}")
     
     # gera uma trajetória base aleatória
     x0_base = np.random.uniform(x0_min, x0_max)
-    v0_base = np.random.uniform(v0_min, v0_max)
+    y0_base = np.random.uniform(y0_min, y0_max)
     
     print(f"\n  Trajetória Base Selecionada:")
-    print(f"    x0 = {x0_base:.3f} m")
-    print(f"    v0 = {v0_base:.3f} m/s")
-    print(f"    Período: {tempos_unicos.max():.3f} s")
+    print(f"    x0 = {x0_base:.3f}")
+    print(f"    y0 = {y0_base:.3f}")
+    print(f"    Distância do equilíbrio: {np.sqrt((x0_base - x_eq)**2 + (y0_base - y_eq)**2):.3f}")
+    print(f"    Tempo máximo: {tempo_maximo:.3f} s")
     
     num_variacoes = 5
     variacoes = []
     
-    # opção 1: geração aleatória dentro dos limites
+    # geração aleatória dentro dos limites
     np.random.seed(seed)
     x0_variacoes = np.random.uniform(x0_min, x0_max, num_variacoes)
-    v0_variacoes = np.random.uniform(v0_min, v0_max, num_variacoes)
+    y0_variacoes = np.random.uniform(y0_min, y0_max, num_variacoes)
         
     print(f"\n  Gerando {num_variacoes} novas condições iniciais:")
     for i in range(num_variacoes):
+        distancia = np.sqrt((x0_variacoes[i] - x_eq)**2 + (y0_variacoes[i] - y_eq)**2)
         variacoes.append({
             'x0': x0_variacoes[i],
-            'v0': v0_variacoes[i],
-            'amplitude': np.sqrt(x0_variacoes[i]**2 + (v0_variacoes[i] / omega_fixo)**2)
+            'y0': y0_variacoes[i],
+            'distancia_eq': distancia
         })
-        print(f"    Caso {i+1}: x0={x0_variacoes[i]:.3f} m, v0={v0_variacoes[i]:.3f} m/s")
+        print(f"    Caso {i+1}: x0={x0_variacoes[i]:.3f}, y0={y0_variacoes[i]:.3f}, distância={distancia:.3f}")
     
     todas_previsoes = []
     todos_reais_interpolados = []
     
     tempos_lista = []
-    posicoes_previstas_lista = []
-    velocidades_previstas_lista = []
-    posicoes_reais_lista = []
-    velocidades_reais_lista = []
+    presas_previstas_lista = []
+    predadores_previstos_lista = []
+    presas_reais_lista = []
+    predadores_reais_lista = []
     casos_info_lista = []
     dados_interpolados = []
     
     # para cada nova condição inicial, faz a previsão
     for var_idx, var in enumerate(variacoes):
         x0_novo = var['x0']
-        v0_novo = var['v0']
+        y0_novo = var['y0']
         
-        # entrada para o modelo: x0, v0
-        X_novo = np.array([[x0_novo, v0_novo]], dtype=np.float32)
+        # entrada para o modelo: x0, y0
+        X_novo = np.array([[x0_novo, y0_novo]], dtype=np.float32)
         
         # normaliza e faz previsão
         X_novo_scaled = scaler_X.transform(X_novo)
@@ -1612,43 +1818,64 @@ def interpola_trajetorias_mlp_node(
         # desnormaliza a trajetória completa
         pred = scaler_y.inverse_transform(pred_scaled)
         
-        # separa posições e velocidades da trajetória completa
-        # saída: [x0, v0, x1, v1, ..., xN, vN]
-        posicoes_previstas = pred[0, 0::2]  # posições (índices pares)
-        velocidades_previstas = pred[0, 1::2]  # velocidades (índices ímpares)
+        # separa presas e predadores da trajetória completa
+        # saída: [x0, y0, x1, y1, ..., xN, yN]
+        presas_previstas = pred[0, 0::2]  # presas (índices pares)
+        predadores_previstos = pred[0, 1::2]  # predadores (índices ímpares)
         
         # verifica se o número de pontos coincide com os tempos
-        if len(posicoes_previstas) != len(tempos_unicos):
-            print(f"  AVISO: Ajustando tempos para {len(posicoes_previstas)} pontos")
-            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(posicoes_previstas))
+        if len(presas_previstas) != len(tempos_unicos):
+            print(f"  AVISO: Ajustando tempos para {len(presas_previstas)} pontos")
+            tempos_ajustados = np.linspace(tempos_unicos[0], tempos_unicos[-1], len(presas_previstas))
         else:
             tempos_ajustados = tempos_unicos
         
-        # solução analítica
-        pos_analitico = x0_novo * np.cos(omega_fixo * tempos_ajustados) + \
-                        (v0_novo / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
-        vel_analitico = -x0_novo * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
-                        v0_novo * np.cos(omega_fixo * tempos_ajustados)
+        osc = OsciladorLotkaVolterra(
+            taxas_crescimento=[a],
+            taxas_mortalidade=[c],
+            taxas_predacao=[b],
+            taxas_eficiencia=[d],
+            device='cpu'
+        )
+        
+        cond_curta = torch.tensor([[x0_novo, y0_novo]], dtype=torch.float32)
+        solucao_curta = osc.resolve_multi_condicoes_sistemas(
+            condicoes_iniciais=cond_curta,
+            t_final=tempo_maximo,
+            dt=dt_interpolacao
+        )
+        
+        presas_reais = solucao_curta['presas'][:, 0, 0]
+        predadores_reais = solucao_curta['predadores'][:, 0, 0]
+        tempos_reais = solucao_curta['tempo']
+        
+        if len(tempos_reais) != len(tempos_ajustados):
+            interp_presas = interp1d(tempos_reais, presas_reais, kind='linear', fill_value='extrapolate')
+            interp_predadores = interp1d(tempos_reais, predadores_reais, kind='linear', fill_value='extrapolate')
+            presas_reais_ajustados = interp_presas(tempos_ajustados)
+            predadores_reais_ajustados = interp_predadores(tempos_ajustados)
+        else:
+            presas_reais_ajustados = presas_reais
+            predadores_reais_ajustados = predadores_reais
         
         # métricas globais (ponto a ponto para compatibilidade)
-        pred_pontos = np.column_stack([posicoes_previstas, velocidades_previstas])
-        real_pontos = np.column_stack([pos_analitico, vel_analitico])
+        pred_pontos = np.column_stack([presas_previstas, predadores_previstos])
+        real_pontos = np.column_stack([presas_reais_ajustados, predadores_reais_ajustados])
         
         todas_previsoes.append(pred_pontos)
         todos_reais_interpolados.append(real_pontos)
         
         tempos_lista.append(tempos_ajustados)
-        posicoes_previstas_lista.append(posicoes_previstas)
-        velocidades_previstas_lista.append(velocidades_previstas)
-        posicoes_reais_lista.append(pos_analitico)
-        velocidades_reais_lista.append(vel_analitico)
+        presas_previstas_lista.append(presas_previstas)
+        predadores_previstos_lista.append(predadores_previstos)
+        presas_reais_lista.append(presas_reais_ajustados)
+        predadores_reais_lista.append(predadores_reais_ajustados)
         
         cor = CORES_PALETA[var_idx % len(CORES_PALETA)]
         
         casos_info_lista.append({
             'x0': x0_novo,
-            'v0': v0_novo,
-            'omega': omega_fixo,
+            'y0': y0_novo,
             'cor': cor,
             'variation_id': var_idx
         })
@@ -1657,19 +1884,24 @@ def interpola_trajetorias_mlp_node(
             dados_interpolados.append({
                 'variacao_id': var_idx,
                 'x0': x0_novo,
-                'v0': v0_novo,
-                'omega': omega_fixo,
+                'y0': y0_novo,
+                'taxa_crescimento_a': a,
+                'taxa_predacao_b': b,
+                'taxa_mortalidade_c': c,
+                'taxa_eficiencia_d': d,
+                'presas_eq': x_eq,
+                'predadores_eq': y_eq,
                 'tempo': tempos_ajustados[k],
-                'posicao_analitica': pos_analitico[k],
-                'velocidade_analitica': vel_analitico[k],
-                'posicao_prevista_mlp': pred_pontos[k, 0],
-                'velocidade_prevista_mlp': pred_pontos[k, 1],
-                'erro_posicao': pred_pontos[k, 0] - pos_analitico[k],
-                'erro_velocidade': pred_pontos[k, 1] - vel_analitico[k],
-                'erro_abs_posicao': abs(pred_pontos[k, 0] - pos_analitico[k]),
-                'erro_abs_velocidade': abs(pred_pontos[k, 1] - vel_analitico[k]),
-                'erro_rel_posicao_pct': (abs(pred_pontos[k, 0] - pos_analitico[k]) / (abs(pos_analitico[k]) + 1e-6)) * 100,
-                'erro_rel_velocidade_pct': (abs(pred_pontos[k, 1] - vel_analitico[k]) / (abs(vel_analitico[k]) + 1e-6)) * 100,
+                'presas_real': presas_reais_ajustados[k],
+                'predadores_real': predadores_reais_ajustados[k],
+                'presas_previsto_mlp': pred_pontos[k, 0],
+                'predadores_previsto_mlp': pred_pontos[k, 1],
+                'erro_presas': pred_pontos[k, 0] - presas_reais_ajustados[k],
+                'erro_predadores': pred_pontos[k, 1] - predadores_reais_ajustados[k],
+                'erro_abs_presas': abs(pred_pontos[k, 0] - presas_reais_ajustados[k]),
+                'erro_abs_predadores': abs(pred_pontos[k, 1] - predadores_reais_ajustados[k]),
+                'erro_rel_presas_pct': (abs(pred_pontos[k, 0] - presas_reais_ajustados[k]) / (abs(presas_reais_ajustados[k]) + 1e-6)) * 100,
+                'erro_rel_predadores_pct': (abs(pred_pontos[k, 1] - predadores_reais_ajustados[k]) / (abs(predadores_reais_ajustados[k]) + 1e-6)) * 100,
             })
     
     if len(todas_previsoes) == 0:
@@ -1679,16 +1911,16 @@ def interpola_trajetorias_mlp_node(
     predictions_all = np.vstack(todas_previsoes)
     y_true_all = np.vstack(todos_reais_interpolados)
     
-    rmse_pos = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
-    rmse_vel = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
-    r2_pos = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
-    r2_vel = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
+    rmse_presas = float(np.sqrt(mean_squared_error(y_true_all[:, 0], predictions_all[:, 0])))
+    rmse_predadores = float(np.sqrt(mean_squared_error(y_true_all[:, 1], predictions_all[:, 1])))
+    r2_presas = float(r2_score(y_true_all[:, 0], predictions_all[:, 0]))
+    r2_predadores = float(r2_score(y_true_all[:, 1], predictions_all[:, 1]))
     
     print(f"\n  Total de pontos previstos: {len(predictions_all)}")
-    print(f"  RMSE Posição (vs solução analítica): {rmse_pos:.6f} m")
-    print(f"  RMSE Velocidade (vs solução analítica): {rmse_vel:.6f} m/s")
-    print(f"  R² Posição (vs solução analítica): {r2_pos:.4f}")
-    print(f"  R² Velocidade (vs solução analítica): {r2_vel:.4f}")
+    print(f"  RMSE Presas (vs solução RK4): {rmse_presas:.6f}")
+    print(f"  RMSE Predadores (vs solução RK4): {rmse_predadores:.6f}")
+    print(f"  R² Presas (vs solução RK4): {r2_presas:.4f}")
+    print(f"  R² Predadores (vs solução RK4): {r2_predadores:.4f}")
     
     # ============================================
     # GRÁFICO 1: Real vs Previsto
@@ -1697,7 +1929,7 @@ def interpola_trajetorias_mlp_node(
     fig1 = cria_grafico_interpolacao_pontual_mlp(
         predictions=predictions_all,
         y_true=y_true_all,
-        titulo="Novas Condições Iniciais: Solução Analítica vs MLP"
+        titulo="Novas Condições Iniciais: RK4 vs MLP - Lotka-Volterra"
     )
     
     fig1.write_html(grafico_interpolacao_trajetorias)
@@ -1706,33 +1938,33 @@ def interpola_trajetorias_mlp_node(
     # GRÁFICO 2: Espaço de Fases
     # ============================================
     
-    y_pos_true = y_true_all[:, 0].reshape(-1, 1)
-    y_vel_true = y_true_all[:, 1].reshape(-1, 1)
-    y_pos_pred = predictions_all[:, 0].reshape(-1, 1)
-    y_vel_pred = predictions_all[:, 1].reshape(-1, 1)
+    y_presas_true = y_true_all[:, 0].reshape(-1, 1)
+    y_predadores_true = y_true_all[:, 1].reshape(-1, 1)
+    y_presas_pred = predictions_all[:, 0].reshape(-1, 1)
+    y_predadores_pred = predictions_all[:, 1].reshape(-1, 1)
     
     fig2 = cria_grafico_interpolacao_pontual_espaco_fases(
-        y_pos_true=y_pos_true,
-        y_vel_true=y_vel_true,
-        y_pos_pred=y_pos_pred,
-        y_vel_pred=y_vel_pred,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Espaço de Fases"
+        y_pos_true=y_presas_true,
+        y_vel_true=y_predadores_true,
+        y_pos_pred=y_presas_pred,
+        y_vel_pred=y_predadores_pred,
+        titulo="Novas Condições Iniciais: MLP vs RK4 - Espaço de Fases - Lotka-Volterra"
     )
     
     fig2.write_html(grafico_interpolacao_trajetorias_espaco_fases)
     
     # ============================================
-    # GRÁFICO 3: Posição e Velocidade vs Tempo
+    # GRÁFICO 3: Presas e Predadores vs Tempo
     # ============================================
     
     fig3 = cria_grafico_interpolacao_pontual_completo(
         tempos_lista=tempos_lista,
-        posicoes_previstas_lista=posicoes_previstas_lista,
-        velocidades_previstas_lista=velocidades_previstas_lista,
-        posicoes_reais_lista=posicoes_reais_lista,
-        velocidades_reais_lista=velocidades_reais_lista,
+        posicoes_previstas_lista=presas_previstas_lista,
+        velocidades_previstas_lista=predadores_previstos_lista,
+        posicoes_reais_lista=presas_reais_lista,
+        velocidades_reais_lista=predadores_reais_lista,
         casos_info=casos_info_lista,
-        titulo="Novas Condições Iniciais: MLP vs Solução Analítica - Posição e Velocidade vs Tempo"
+        titulo="Novas Condições Iniciais: MLP vs RK4 - Presas e Predadores vs Tempo - Lotka-Volterra"
     )
     
     fig3.write_html(grafico_interpolacao_trajetorias_temporal)
@@ -1743,28 +1975,53 @@ def interpola_trajetorias_mlp_node(
     
     df_interpolado = pd.DataFrame(dados_interpolados)
     
-    df_interpolado.attrs['rmse_posicao'] = rmse_pos
-    df_interpolado.attrs['rmse_velocidade'] = rmse_vel
-    df_interpolado.attrs['r2_posicao'] = r2_pos
-    df_interpolado.attrs['r2_velocidade'] = r2_vel
+    df_interpolado.attrs['rmse_presas'] = rmse_presas
+    df_interpolado.attrs['rmse_predadores'] = rmse_predadores
+    df_interpolado.attrs['r2_presas'] = r2_presas
+    df_interpolado.attrs['r2_predadores'] = r2_predadores
     df_interpolado.attrs['total_pontos'] = len(predictions_all)
     df_interpolado.attrs['num_variacoes'] = num_variacoes
     df_interpolado.attrs['num_tempos'] = len(tempos_ajustados)
-    df_interpolado.attrs['omega_fixo'] = omega_fixo
+    df_interpolado.attrs['taxa_crescimento_a'] = a
+    df_interpolado.attrs['taxa_predacao_b'] = b
+    df_interpolado.attrs['taxa_mortalidade_c'] = c
+    df_interpolado.attrs['taxa_eficiencia_d'] = d
+    df_interpolado.attrs['presas_eq'] = x_eq
+    df_interpolado.attrs['predadores_eq'] = y_eq
     df_interpolado.attrs['x0_min'] = x0_min
     df_interpolado.attrs['x0_max'] = x0_max
-    df_interpolado.attrs['v0_min'] = v0_min
-    df_interpolado.attrs['v0_max'] = v0_max
+    df_interpolado.attrs['y0_min'] = y0_min
+    df_interpolado.attrs['y0_max'] = y0_max
     
     # ========================================================================
     # GRÁFICO 4: Trajetória Base e Novas Condições Iniciais no Espaço de Fases
     # ========================================================================
     
-    # gera a trajetória base analiticamente
-    pos_base = x0_base * np.cos(omega_fixo * tempos_ajustados) + \
-               (v0_base / omega_fixo) * np.sin(omega_fixo * tempos_ajustados)
-    vel_base = -x0_base * omega_fixo * np.sin(omega_fixo * tempos_ajustados) + \
-               v0_base * np.cos(omega_fixo * tempos_ajustados)
+    # gera a trajetória base via RK4
+    osc_base = OsciladorLotkaVolterra(
+        taxas_crescimento=[a],
+        taxas_mortalidade=[c],
+        taxas_predacao=[b],
+        taxas_eficiencia=[d],
+        device='cpu'
+    )
+    
+    cond_base = torch.tensor([[x0_base, y0_base]], dtype=torch.float32)
+    sol_base = osc_base.resolve_multi_condicoes_sistemas(
+        condicoes_iniciais=cond_base,
+        t_final=tempo_maximo,
+        dt=dt_interpolacao
+    )
+    
+    presas_base = sol_base['presas'][:, 0, 0]
+    predadores_base = sol_base['predadores'][:, 0, 0]
+    tempos_base = sol_base['tempo']
+    
+    if len(tempos_base) != len(tempos_ajustados):
+        interp_presas_base = interp1d(tempos_base, presas_base, kind='linear', fill_value='extrapolate')
+        interp_predadores_base = interp1d(tempos_base, predadores_base, kind='linear', fill_value='extrapolate')
+        presas_base = interp_presas_base(tempos_ajustados)
+        predadores_base = interp_predadores_base(tempos_ajustados)
     
     novas_trajetorias_para_grafico = []
     
@@ -1774,27 +2031,27 @@ def interpola_trajetorias_mlp_node(
         
         if len(dados_var) > 0:
             x0_var = dados_var['x0'].iloc[0]
-            v0_var = dados_var['v0'].iloc[0]
+            y0_var = dados_var['y0'].iloc[0]
             
             novas_trajetorias_para_grafico.append({
                 'variacao_id': var_idx,
-                'posicoes': dados_var['posicao_prevista_mlp'].values,
-                'velocidades': dados_var['velocidade_prevista_mlp'].values,
+                'posicoes': dados_var['presas_previsto_mlp'].values,
+                'velocidades': dados_var['predadores_previsto_mlp'].values,
                 'x0': x0_var,
-                'v0': v0_var
+                'v0': y0_var
             })
     
     casos_info_grafico = {
         'x0_base': x0_base,
-        'v0_base': v0_base
+        'v0_base': y0_base
     }
     
     fig4 = cria_grafico_interpolacao_trajetorias_espaco_fases(
-        trajetoria_base_pos=pos_base,
-        trajetoria_base_vel=vel_base,
+        trajetoria_base_pos=presas_base,
+        trajetoria_base_vel=predadores_base,
         novas_trajetorias_lista=novas_trajetorias_para_grafico,
         casos_info=casos_info_grafico,
-        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases"
+        titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases - Lotka-Volterra"
     )
     
     grafico_novas_trajetorias = f"{output_dir}/trajetoria_base_vs_novas_condicoes.html"

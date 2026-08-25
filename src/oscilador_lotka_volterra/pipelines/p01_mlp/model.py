@@ -1,7 +1,5 @@
-# modelo saída: trajetória completa; entrada: [x0, v0]
-
 """
-Definição da arquitetura do MLP para previsão de trajetórias completas.
+Definição da arquitetura do MLP para previsão de trajetórias completas do oscilador de Lotka-Volterra.
 """
 
 import numpy as np
@@ -11,17 +9,17 @@ import torch.nn as nn
 
 class MLP(nn.Module):
     """
-    Multi-Layer Perceptron para prever trajetórias completas.
+    Multi-Layer Perceptron para prever trajetórias completas do Lotka-Volterra.
     
-    Entrada: [x0, v0] - condições iniciais
-    Saída: [x_0, v_0, x_1, v_1, ..., x_N, v_N] - trajetória completa
+    Entrada: [x0, y0] - condições iniciais (presas, predadores)
+    Saída: [x_0, y_0, x_1, y_1, ..., x_N, y_N] - trajetória completa
     """
 
-    def __init__(self, input_dim=2, hidden_dims=[64, 128, 64], output_dim=None, 
+    def __init__(self, input_dim=2, hidden_dims=[64, 128, 256], output_dim=None, 
                  num_timesteps=127, activation='relu', seed=None):
         """
         Args:
-            input_dim: Dimensão da entrada (2: x0, v0)
+            input_dim: Dimensão da entrada (2: x0, y0)
             hidden_dims: Dimensões das camadas ocultas
             output_dim: Dimensão da saída (2 * num_timesteps)
             num_timesteps: Número de instantes de tempo na trajetória
@@ -48,7 +46,7 @@ class MLP(nn.Module):
             'tanh': nn.Tanh(),
         }
         
-        self.activation = activation_functions.get(activation.lower(), nn.Sigmoid())
+        self.activation = activation_functions.get(activation.lower(), nn.ReLU())
         
         layers = []
         prev_dim = input_dim
@@ -74,67 +72,66 @@ class MLP(nn.Module):
         Forward pass.
         
         Args:
-            x: tensor de entrada (batch_size, input_dim) - [x0, v0]
+            x: tensor de entrada (batch_size, input_dim) - [x0, y0]
             
         Returns:
-            tensor de saída (batch_size, output_dim) - [x_0, v_0, x_1, v_1, ..., x_N, v_N]
+            tensor de saída (batch_size, output_dim) - [x_0, y_0, x_1, y_1, ..., x_N, y_N]
         """
         return self.network(x)
     
-    def get_trajectory(self, x0, v0, tempos=None):
+    def get_trajectory(self, x0, y0, tempos=None):
         """
         Obtém a trajetória completa para uma condição inicial.
         
         Args:
-            x0: Posição inicial (float)
-            v0: Velocidade inicial (float)
+            x0: População inicial de presas (float)
+            y0: População inicial de predadores (float)
             tempos: Array com os tempos (opcional, apenas para referência)
             
         Returns:
-            dict com 'posicoes', 'velocidades' e 'tempos'
+            dict com 'presas', 'predadores' e 'tempos'
         """
         self.eval()
         with torch.no_grad():
-            x = torch.tensor([[x0, v0]], dtype=torch.float32)
+            x = torch.tensor([[x0, y0]], dtype=torch.float32)
             output = self.forward(x).numpy().flatten()
         
-        # separa posições e velocidades (intercalados)
-        posicoes = output[0::2]
-        velocidades = output[1::2]
+        # separa presas e predadores (intercalados)
+        presas = output[0::2]
+        predadores = output[1::2]
         
         # se tempos não foi fornecido, cria um array baseado no número de pontos
         if tempos is None:
             tempos = np.arange(self.num_timesteps)
         elif len(tempos) != self.num_timesteps:
-            # se o número de tempos não coincide, interpola ou ajusta
             tempos = np.linspace(tempos[0], tempos[-1], self.num_timesteps)
         
         return {
-            'posicoes': posicoes,
-            'velocidades': velocidades,
+            'presas': presas,
+            'predadores': predadores,
             'tempos': tempos
         }
     
-    def get_trajectories_batch(self, x0_batch, v0_batch, tempos=None):
+    def get_trajectories_batch(self, x0_batch, y0_batch, tempos=None):
         """
         Obtém trajetórias completas para múltiplas condições iniciais.
         
         Args:
-            x0_batch: Array de posições iniciais
-            v0_batch: Array de velocidades iniciais
+            x0_batch: Array de populações iniciais de presas
+            y0_batch: Array de populações iniciais de predadores
             tempos: Array com os tempos (opcional)
             
         Returns:
-            dict com 'posicoes', 'velocidades' e 'tempos'
+            dict com 'presas', 'predadores' e 'tempos'
         """
         self.eval()
         with torch.no_grad():
-            x = torch.tensor(np.column_stack([x0_batch, v0_batch]), dtype=torch.float32)
+            x = torch.tensor(np.column_stack([x0_batch, y0_batch]), dtype=torch.float32)
             outputs = self.forward(x).numpy()
         
-        # separa posições e velocidades para cada trajetória
-        posicoes = outputs[:, 0::2]
-        velocidades = outputs[:, 1::2]
+        # separa presas e predadores para cada trajetória
+        presas = outputs[:, 0::2]
+        predadores = outputs[:, 1::2]
         
         if tempos is None:
             tempos = np.arange(self.num_timesteps)
@@ -142,7 +139,7 @@ class MLP(nn.Module):
             tempos = np.linspace(tempos[0], tempos[-1], self.num_timesteps)
         
         return {
-            'posicoes': posicoes,
-            'velocidades': velocidades,
+            'presas': presas,
+            'predadores': predadores,
             'tempos': tempos
         }

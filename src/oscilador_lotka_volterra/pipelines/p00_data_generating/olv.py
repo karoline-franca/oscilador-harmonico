@@ -68,12 +68,18 @@ class OsciladorLotkaVolterra:
                  onde o último eixo é [presas (x), predadores (y)]
         retorna: tensor da forma (n_condicoes, n_sistemas, 2)
         """
-        x = estados[:, :, 0]  # Presas
-        y = estados[:, :, 1]  # Predadores
+        x = estados[:, :, 0]  # presas
+        y = estados[:, :, 1]  # predadores
         
-        dxdt = self.taxas_crescimento * x - self.taxas_predacao * x * y
+        # dimensões para transmissão correta das taxas para cada sistema
+        a = self.taxas_crescimento.unsqueeze(0).expand(x.shape[0], -1)
+        b = self.taxas_predacao.unsqueeze(0).expand(x.shape[0], -1)
+        c = self.taxas_mortalidade.unsqueeze(0).expand(x.shape[0], -1)
+        d = self.taxas_eficiencia.unsqueeze(0).expand(x.shape[0], -1)
         
-        dydt = -self.taxas_mortalidade * y + self.taxas_eficiencia * x * y
+        dxdt = a * x - b * x * y
+        
+        dydt = -c * y + d * x * y
         
         return torch.stack([dxdt, dydt], dim=2)
     

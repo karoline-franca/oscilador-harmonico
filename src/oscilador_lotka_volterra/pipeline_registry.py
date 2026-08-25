@@ -1,8 +1,8 @@
 """Pipeline registry."""
 
 from kedro.pipeline import Pipeline
-from oscilador_harmonico.pipelines.p00_data_generating.pipeline import create_pipeline as create_pipeline_data
-from oscilador_harmonico.pipelines.p01_mlp.pipeline import create_pipeline as create_pipeline_mlp
+from oscilador_lotka_volterra.pipelines.p00_data_generating.pipeline import create_pipeline as create_pipeline_data
+from oscilador_lotka_volterra.pipelines.p01_mlp.pipeline import create_pipeline as create_pipeline_mlp
 
 
 def register_pipelines() -> dict[str, Pipeline]:
