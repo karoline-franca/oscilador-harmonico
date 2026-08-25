@@ -1686,7 +1686,7 @@ def interpola_trajetorias_mlp_node(
     Node: Usa o modelo treinado para gerar diferentes condições iniciais a partir de uma trajetória base.
     A partir de uma trajetória escolhida aleatoriamente, gera novas condições iniciais variando x0 e y0.
     Não mistura dados de treino/validação/teste pois usa dados gerados aleatoriamente.
-    Agora prevê trajetórias completas a partir das condições iniciais.
+    Prevê trajetórias completas a partir das condições iniciais.
     """
     
     exp_name = parameters.get('exp_name', 'default_exp')

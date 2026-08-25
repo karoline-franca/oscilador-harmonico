@@ -29,8 +29,6 @@ outputs:
   base_csv: "base_olv.csv"
 
 mlp:
-  input_dim: 7                      # dimensões de entrada da rede neural
-  output_dim: 2                     # dimensões de saída da rede neural
   hidden_dims: [64, 128, 256]       # camadas ocultas
   activation: "relu"                # função de ativação
   batch_size: 512                   # tamanho do batch
