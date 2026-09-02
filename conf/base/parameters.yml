@@ -6,7 +6,7 @@ simulation:
   save_every: 2
 
 intervals:
-  parametro_mu: 0.0                   # parâmetro de não linearidade
+  parametro_mu: 0.05                  # parâmetro de não linearidade
   x0_min: -3.0                        # posição inicial mínima
   x0_max: 3.0                         # posição inicial máxima
   y0_min: -3.0                        # velocidade inicial mínima
