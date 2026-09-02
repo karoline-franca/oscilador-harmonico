@@ -36,17 +36,24 @@ from oscilador_van_der_pol.utils import (
 )
 
 
-def fixar_sementes(seed: int = 42):
+def fixa_sementes(seed: int = 42):
     """Fixa todas as sementes para reprodutibilidade."""
     
     random.seed(seed)
     np.random.seed(seed)
+    
     torch.manual_seed(seed)
+    
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+    
+    if torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
+    
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 
 def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, Any]) -> Tuple:
@@ -59,6 +66,9 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
     O tempo é usado apenas para organizar os pontos da trajetória,
     mas não é uma feature de entrada.
     """
+
+    seed = parameters.get('seed', 42)
+    fixa_sementes(seed)
     
     for col in base_oscilador.columns:
         if base_oscilador[col].dtype == 'object':
@@ -345,7 +355,7 @@ def cria_modelo_mlp_node(input_dim: int, output_dim: int, parameters: Dict[str, 
     mlp_config = parameters.get('mlp', {})
     seed = parameters.get('seed', 42)
     
-    fixar_sementes(seed)
+    fixa_sementes(seed)
     
     hidden_dims = mlp_config.get('hidden_dims', [64, 128, 64])
     activation = mlp_config.get('activation', 'relu')
@@ -379,12 +389,13 @@ def treina_mlp_node(
     """Treina o modelo MLP para prever trajetórias completas do oscilador de Van der Pol."""
 
     mlp_config = parameters.get('mlp', {})
+    seed = parameters.get('seed', 42)
     
     batch_size = mlp_config.get('batch_size', 512)
     epochs = mlp_config.get('epochs', 500)
     learning_rate = mlp_config.get('learning_rate', 0.005)
     weight_decay = 0.0001
-    
+        
     exp_name = parameters.get('exp_name', 'default_exp')
     data_version = parameters.get('data_version', 'base_01')
     
@@ -406,8 +417,18 @@ def treina_mlp_node(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    generator = torch.Generator().manual_seed(seed)
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        shuffle=True,
+        generator=generator
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=batch_size, 
+        shuffle=False
+    )
     
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -424,6 +445,7 @@ def treina_mlp_node(
     print(f"  Epochs: {epochs}")
     print(f"  Learning rate: {learning_rate}")
     print(f"  Função loss: RMSE (Root Mean Squared Error)")
+    print(f"  Seed: {seed}")
     
     for epoch in range(epochs):
         # treino
