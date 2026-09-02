@@ -33,7 +33,7 @@ def gera_condicoes_iniciais_node(parameters: Dict[str, Any]) -> pd.DataFrame:
 
 def gera_parametros_oscilador_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     """
-    Gera parâmetros do sistema FitzHugh-Nagumo (epsilon, a, b, I).
+    Gera parâmetros do sistema FitzHugh-Nagumo (epsilon, a, b, I, R).
     """
     intervals = parameters['intervals']
     
@@ -41,7 +41,8 @@ def gera_parametros_oscilador_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     a = parameters.get('a', 0.7)  # parâmetro de recuperação (offset)
     b = parameters.get('b', 0.8)  # parâmetro de recuperação (inclinação)
     I = parameters.get('I', 0.5)  # corrente aplicada
-    
+    R = parameters.get('R', 0.1)  # resistência de acoplamento
+
     # classificação qualitativa do comportamento baseado em epsilon
     if epsilon < 0.01:
         desc_epsilon = "Muito lento (epsilon muito pequeno)"
@@ -61,19 +62,26 @@ def gera_parametros_oscilador_node(parameters: Dict[str, Any]) -> pd.DataFrame:
     else:
         # epsilon moderado, estimativa baseada em simulações típicas
         periodo_estimado = 2.0 * np.pi / max(epsilon, 1e-10)
+
+    # estimativa grosseira da faixa de oscilação
+    try:
+        I_critical_min = (a - 1.0/3.0) / b
+        I_critical_max = (a + 1.0/3.0) / b
+        possui_oscilacao = (I_critical_min < I < I_critical_max)
+    except ZeroDivisionError:
+        # quando b = 0, não há divisão por zero
+        I_critical_min = -np.inf
+        I_critical_max = np.inf
+        possui_oscilacao = True  # assume que oscila para b=0
     
-    # parâmetros típicos (a=0.7, b=0.8), oscila para 0.3 < I < 0.7
-    I_critical_min = (a - 1.0/3.0) / b  # estimativa grosseira
-    I_critical_max = (a + 1.0/3.0) / b  # estimativa grosseira
-    possui_oscilacao = (I_critical_min < I < I_critical_max)
-    
-    descricao = f"epsilon={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, {desc_epsilon}"
+    descricao = f"epsilon={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}, {desc_epsilon}"
     
     return pd.DataFrame({
         'parametro_epsilon': [epsilon],
         'parametro_a': [a],
         'parametro_b': [b],
         'parametro_I': [I],
+        'parametro_R': [R],
         'descricao_sistema': [descricao],
         'periodo_estimado': [periodo_estimado],
         'classificacao_epsilon': [desc_epsilon],
@@ -108,12 +116,14 @@ def executa_simulacao_rk4_node(
     a = parametros_oscilador['parametro_a'].values[0]
     b = parametros_oscilador['parametro_b'].values[0]
     I = parametros_oscilador['parametro_I'].values[0]
+    R = parametros_oscilador['parametro_R'].values[0]
     
     oscilador = OsciladorFitzHughNagumo(
         parametros_epsilon=epsilon,
         a=a,
         b=b,
         I=I,
+        R=R,
         device=device
     )
     
@@ -146,7 +156,8 @@ def executa_simulacao_rk4_node(
             'epsilon': float(epsilon[0]) if epsilon else 0.0,
             'a': float(a),
             'b': float(b),
-            'I': float(I)
+            'I': float(I),
+            'R': float(R)
         },
         'possui_oscilacao': bool(parametros_oscilador['possui_oscilacao'].values[0])
     }
@@ -187,6 +198,7 @@ def gera_base_consolidada_node(
     a = parametros_oscilador['parametro_a'].values[0] if 'parametro_a' in parametros_oscilador else 0.7
     b = parametros_oscilador['parametro_b'].values[0] if 'parametro_b' in parametros_oscilador else 0.8
     I = parametros_oscilador['parametro_I'].values[0] if 'parametro_I' in parametros_oscilador else 0.5
+    R = parametros_oscilador['parametro_R'].values[0] if 'parametro_R' in parametros_oscilador else 0.1
     
     for i_sistema in range(n_sistemas):
         for i_cond in range(n_condicoes):
@@ -211,9 +223,12 @@ def gera_base_consolidada_node(
                     'parametro_a': float(a),
                     'parametro_b': float(b),
                     'parametro_I': float(I),
+                    'parametro_R': float(R),
                     'periodo_estimado': float(parametros_oscilador.iloc[i_sistema]['periodo_estimado']),
                     'classificacao_epsilon': parametros_oscilador.iloc[i_sistema]['classificacao_epsilon'],
                     'possui_oscilacao': int(parametros_oscilador.iloc[i_sistema]['possui_oscilacao']),
+                    'I_critical_min': float(parametros_oscilador.iloc[i_sistema]['I_critical_min']),
+                    'I_critical_max': float(parametros_oscilador.iloc[i_sistema]['I_critical_max']),
                     'v0': float(solucao['condicoes_iniciais'][i_cond, 0]),
                     'w0': float(solucao['condicoes_iniciais'][i_cond, 1]),
                     'potencial_eq': float(solucao['potencial_eq'][i_sistema]),

@@ -1,10 +1,10 @@
 simulation:
   n_sistemas: 1
-  n_condicoes_iniciais: 100
+  n_condicoes_iniciais: 500
   num_periodos: 1
   dt: 0.01
   save_every: 2
-  t_final_padrao: 100.0              # tempo final para sistemas que não oscilam
+  t_final_padrao: 200.0              # tempo final para sistemas que não oscilam
 
 intervals:
   parametro_epsilon: 0.08            # separação de escalas (0 < epsilon << 1)
@@ -17,6 +17,7 @@ intervals:
 a: 0.7                               # recuperação (offset da nuliclina de w)
 b: 0.8                               # recuperação (inclinação da nuliclina de w)
 I: 0.5                               # corrente aplicada (entrada externa)
+R: 0.1                               # resistência de acoplamento      
 
 # parâmetros para múltiplos sistemas
 # parametros_epsilon: [0.01, 0.05, 0.08, 0.1, 0.5]  # separação de escalas (0 < epsilon << 1)

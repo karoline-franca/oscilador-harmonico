@@ -15,7 +15,7 @@ class OsciladorFitzHughNagumo:
     Classe para resolver as equações do oscilador de FitzHugh-Nagumo usando PyTorch e Runge-Kutta.
     """
     
-    def __init__(self, parametros_epsilon, a=0.7, b=0.8, I=0.5, device='cpu'):
+    def __init__(self, parametros_epsilon, a=0.7, b=0.8, I=0.5, R=0.1, device='cpu'):
         """
         Parâmetros do oscilador para múltiplos sistemas simultâneos.
         
@@ -25,6 +25,7 @@ class OsciladorFitzHughNagumo:
             a (float): parâmetro de recuperação (offset da nuliclina de w)
             b (float): parâmetro de recuperação (inclinação da nuliclina de w)
             I (float): corrente aplicada (entrada externa)
+            R (float): resistência de acoplamento
             device (str): dispositivo para computação ('cpu' ou 'cuda')
         """
         if isinstance(parametros_epsilon, list):
@@ -35,6 +36,7 @@ class OsciladorFitzHughNagumo:
         self.a = a
         self.b = b
         self.I = I
+        self.R = R
         self.device = device
         self.n_sistemas = len(self.parametros_epsilon)
         
@@ -84,12 +86,10 @@ class OsciladorFitzHughNagumo:
         v = estados[:, :, 0]  # potencial de membrana
         w = estados[:, :, 1]  # variável de recuperação
         
-        # dimensões para transmissão correta dos parâmetros epsilon para cada sistema
         epsilon = self.parametros_epsilon.unsqueeze(0).expand(v.shape[0], -1)
         
-        # dv/dt = v - v^3/3 - w + I
-        dvdt = v - (v**3) / 3.0 - w + self.I
-        
+        # dv/dt = v - v^3/3 - w + R * I
+        dvdt = v - (v**3) / 3.0 - w + self.R * self.I
         # dw/dt = epsilon*(v + a - b*w)
         dwdt = epsilon * (v + self.a - self.b * w)
         

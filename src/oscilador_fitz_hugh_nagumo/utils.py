@@ -32,7 +32,6 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     
     Espaço de fases: (potencial, recuperação)
     Os pontos das condições iniciais são destacados em preto.
-    O ciclo limite teórico (retângulo ou curva aproximada) é mostrado como referência.
     """
     fig = go.Figure()
     
@@ -46,8 +45,7 @@ def cria_grafico_2d(solucao, sistemas_descricao):
         w_eq = solucao['recuperacao_eq'][i_sistema]
         
         amp_ciclo_teorica_v = solucao.get('amplitude_ciclo_limite_teorica_v', 2.0)[i_sistema]
-        amp_ciclo_teorica_w = solucao.get('amplitude_ciclo_limite_teorica_w', (2.0 + solucao.get('a', 0.7)) / solucao.get('b', 0.8))[i_sistema]
-        
+
         v0_list = []
         w0_list = []
         
@@ -86,79 +84,35 @@ def cria_grafico_2d(solucao, sistemas_descricao):
                     f"<extra></extra>"
                 )
             ))
-        
-        fig.add_trace(go.Scatter(
-            x=[v_eq],
-            y=[w_eq],
-            mode='markers',
-            marker=dict(
-                color='orange',
-                size=10,
-                symbol='x',
-                line=dict(color='orange', width=2)
-            ),
-            name=f'Ponto de Equilíbrio',
-            legendgroup=f'equilibrio_{i_sistema}',
-            showlegend=True,
-            hovertemplate=(
-                f"<b>Ponto de Equilíbrio - {sistemas_descricao[i_sistema]}</b><br>" +
-                f"v* = {v_eq:.3f}<br>" +
-                f"w* = {w_eq:.3f}<br>" +
-                f"<extra></extra>"
-            )
-        ))
 
         # ciclo limite teórico para FitzHugh-Nagumo
-        # aproximação do ciclo limite como uma curva elíptica/retangular
         # nuliclina como referência
         v_range = np.linspace(-amp_ciclo_teorica_v, amp_ciclo_teorica_v, 100)
         
-        # nuliclina de v: w = v - v^3/3 + I
+        # nuliclina de v: w = v - v^3/3 + RI
         # nuliclina de w: w = (v + a)/b
-        # ciclo limite está entre as duas nuliclinas
         I = solucao.get('I', 0.5)
+        R = solucao.get('R', 0.1)
         a = solucao.get('a', 0.7)
         b = solucao.get('b', 0.8)
         
         # nuliclina de v para referência
-        w_nuliclina_v = v_range - v_range**3/3 + I
+        w_nuliclina_v = v_range - v_range**3/3 + R * I
         
         # nuliclina de w para referência
         w_nuliclina_w = (v_range + a) / b
-        
-        # ciclo limite aproximado (envoltória entre as nuliclinas)
-        # elipse com as amplitudes teóricas
-        theta = np.linspace(0, 2*np.pi, 100)
-        v_cycle = amp_ciclo_teorica_v * np.cos(theta)
-        w_cycle = amp_ciclo_teorica_w * np.sin(theta)
-        
-        fig.add_trace(go.Scatter(
-            x=v_cycle,
-            y=w_cycle,
-            mode='lines',
-            line=dict(color='gray', width=2, dash='dash'),
-            name=f'Ciclo Limite',
-            legendgroup=f'ciclo_limite_{i_sistema}',
-            showlegend=True,
-            hovertemplate=(
-                f"<b>Ciclo Limite Teórico - Sistema {i_sistema}</b><br>" +
-                f"A_v = {amp_ciclo_teorica_v:.3f}<br>" +
-                f"A_w = {amp_ciclo_teorica_w:.3f}<br>" +
-                f"<extra></extra>"
-            )
-        ))
         
         fig.add_trace(go.Scatter(
             x=v_range,
             y=w_nuliclina_v,
             mode='lines',
             line=dict(color='green', width=1, dash='dot'),
-            name=f'Nuliclina v (w = v - v³/3 + I)',
+            name=f'Nuliclina v (w = v - v³/3 + RI)',
             legendgroup=f'nuliclina_v_{i_sistema}',
             showlegend=(i_sistema == 0),
             hovertemplate=(
                 f"<b>Nuliclina de v - Sistema {i_sistema}</b><br>" +
-                f"w = v - v³/3 + I<br>" +
+                f"w = v - v³/3 + RI<br>" +
                 f"v: %{{x:.3f}}<br>" +
                 f"w: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
@@ -206,12 +160,13 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     a = solucao.get('a', 0.7)
     b = solucao.get('b', 0.8)
     I = solucao.get('I', 0.5)
+    R = solucao.get('R', 0.1)
     
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 2D - Oscilador de FitzHugh-Nagumo</span><br><br>" +
                  f"<span style='font-size:18px; color:#555555;'>" +
-                 f"Parâmetros: a={a:.2f}, b={b:.2f}, I={I:.2f} | " +
+                 f"Parâmetros: a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f} | " +
                  f"Nro. de sistemas: {n_sistemas} | " +
                  f"Nro. de condições iniciais por sistema: {n_condicoes} | " +
                  f"Total de {n_sistemas * n_condicoes} trajetórias</span>",

@@ -115,9 +115,14 @@ def prepara_dados_mlp_node(base_oscilador: pd.DataFrame, parameters: Dict[str, A
         I = base_oscilador['parametro_I'].iloc[0] if len(base_oscilador) > 0 else 0.5
     else:
         I = 0.5
-    
+
+    if 'parametro_R' in base_oscilador.columns:
+        R = base_oscilador['parametro_R'].iloc[0] if len(base_oscilador) > 0 else 0.1
+    else:
+        R = 0.1
+
     print(f"\n=== BASE DE DADOS ===")
-    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}")
+    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}")
     print(f"  Ponto de equilíbrio: v*={v_eq:.3f}, w*={w_eq:.3f}")
     print(f"  Total de linhas da base: {len(base_oscilador)}")
     
@@ -791,7 +796,7 @@ def interpola_trajetorias_avulsas_node(
     """
     Node: Usa o modelo treinado para fazer interpolações e prever trajetórias completas
     para novas condições iniciais não vistas durante o treinamento.
-    Nota: Os parâmetros do sistema (epsilon, a, b, I) são fixos para todos os casos.
+    Nota: Os parâmetros do sistema (epsilon, a, b, I, R) são fixos para todos os casos.
     
     Args:
         model: Modelo MLP treinado (prevê trajetórias completas)
@@ -820,9 +825,9 @@ def interpola_trajetorias_avulsas_node(
     a = parameters.get('a', 0.7)
     b = parameters.get('b', 0.8)
     I = parameters.get('I', 0.5)
-    
+    R = parameters.get('R', 0.1)
     # ponto de equilíbrio
-    # v - v^3/3 - w + I = 0
+    # v - v^3/3 - w + R * I = 0
     # w = (v + a)/b
     v_eq = 0.0
     w_eq = 0.0
@@ -939,7 +944,7 @@ def interpola_trajetorias_avulsas_node(
         caso["dt"] = tempos[1] - tempos[0] if len(tempos) > 1 else 0
     
     print("\n=== INTERPOLAÇÃO DE TRAJETÓRIAS AVULSAS ===")
-    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}")
+    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}")
     print(f"  Ponto de equilíbrio: v*={v_eq:.2f}, w*={w_eq:.2f}")
     for caso in casos_teste:
         print(f"    {caso['nome']}: v0={caso['v0']:.1f}, w0={caso['w0']:.1f}")
@@ -978,7 +983,7 @@ def interpolacoes_pontuais_mlp_node(
     Node: Usa o modelo treinado para fazer interpolação entre pontos de dados gerados aleatoriamente.
     Faz previsões de trajetórias completas a partir de condições iniciais aleatórias.
     Nota: A interpolação é feita dentro da mesma trajetória, variando apenas o tempo.
-    Os parâmetros do sistema (epsilon, a, b, I) são constantes.
+    Os parâmetros do sistema (epsilon, a, b, I, R) são constantes.
     
     Args:
         model: Modelo MLP treinado (prevê trajetórias completas)
@@ -1012,6 +1017,7 @@ def interpolacoes_pontuais_mlp_node(
     a = parameters.get('a', 0.7)
     b = parameters.get('b', 0.8)
     I = parameters.get('I', 0.5)
+    R = parameters.get('R', 0.1)
     
     # ponto de equilíbrio aproximado
     v_eq = 0.0
@@ -1021,7 +1027,7 @@ def interpolacoes_pontuais_mlp_node(
     np.random.seed(seed)
     
     print("\n=== INTERPOLAÇÃO PONTUAL - OSCILADOR DE FITZHUGH-NAGUMO ===")
-    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}")
+    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}")
     print(f"  Ponto de equilíbrio: v*={v_eq:.2f}, w*={w_eq:.2f}")
     print("\n  A interpolação é feita variando o tempo para uma mesma trajetória")
     
@@ -1099,6 +1105,7 @@ def interpolacoes_pontuais_mlp_node(
             a=a,
             b=b,
             I=I,
+            R=R,
             device='cpu'
         )
         
@@ -1183,6 +1190,7 @@ def interpolacoes_pontuais_mlp_node(
                 'parametro_a': a,
                 'parametro_b': b,
                 'parametro_I': I,
+                'parametro_R': R,
                 'potencial_eq': v_eq,
                 'recuperacao_eq': w_eq,
                 'tempo_interpolado': tempos_para_grafico[k],
@@ -1278,6 +1286,7 @@ def interpolacoes_pontuais_mlp_node(
     df_interpolado.attrs['parametro_a'] = a
     df_interpolado.attrs['parametro_b'] = b
     df_interpolado.attrs['parametro_I'] = I
+    df_interpolado.attrs['parametro_R'] = R
     df_interpolado.attrs['potencial_eq'] = v_eq
     df_interpolado.attrs['recuperacao_eq'] = w_eq
     df_interpolado.attrs['tempo_maximo'] = tempo_maximo
@@ -1326,6 +1335,7 @@ def interpola_entre_trajetorias_mlp_node(
     a = parameters.get('a', 0.7)
     b = parameters.get('b', 0.8)
     I = parameters.get('I', 0.5)
+    R = parameters.get('R', 0.1)
     
     # ponto de equilíbrio aproximado
     v_eq = 0.0
@@ -1335,7 +1345,7 @@ def interpola_entre_trajetorias_mlp_node(
     np.random.seed(seed)
     
     print("\n=== INTERPOLAÇÃO ENTRE TRAJETÓRIAS - OSCILADOR DE FITZHUGH-NAGUMO ===")
-    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}")
+    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}")
     print(f"  Ponto de equilíbrio: v*={v_eq:.2f}, w*={w_eq:.2f}")
     print("\n  Para cada instante de tempo, interpola entre duas trajetórias diferentes")
     
@@ -1447,6 +1457,7 @@ def interpola_entre_trajetorias_mlp_node(
             a=a,
             b=b,
             I=I,
+            R=R,
             device='cpu'
         )
         
@@ -1505,6 +1516,7 @@ def interpola_entre_trajetorias_mlp_node(
                 'parametro_a': a,
                 'parametro_b': b,
                 'parametro_I': I,
+                'parametro_R': R,
                 'potencial_eq': v_eq,
                 'recuperacao_eq': w_eq,
                 'tempo': tempos_ajustados[k],
@@ -1603,6 +1615,7 @@ def interpola_entre_trajetorias_mlp_node(
     df_interpolado.attrs['parametro_a'] = a
     df_interpolado.attrs['parametro_b'] = b
     df_interpolado.attrs['parametro_I'] = I
+    df_interpolado.attrs['parametro_R'] = R
     df_interpolado.attrs['potencial_eq'] = v_eq
     df_interpolado.attrs['recuperacao_eq'] = w_eq
     df_interpolado.attrs['v0_min'] = v0_min
@@ -1619,6 +1632,7 @@ def interpola_entre_trajetorias_mlp_node(
         a=a,
         b=b,
         I=I,
+        R=R,
         device='cpu'
     )
     
@@ -1671,7 +1685,8 @@ def interpola_entre_trajetorias_mlp_node(
             'potenciais': dados_alpha['potencial_previsto_mlp'].values,
             'recuperacoes': dados_alpha['recuperacao_previsto_mlp'].values,
             'v0_interp': v0_interp,
-            'w0_interp': w0_interp
+            'w0_interp': w0_interp,
+            'parametro_R': R
         })
     
     casos_info_grafico = [{
@@ -1733,6 +1748,7 @@ def interpola_trajetorias_mlp_node(
     a = parameters.get('a', 0.7)
     b = parameters.get('b', 0.8)
     I = parameters.get('I', 0.5)
+    R = parameters.get('R', 0.1)
     
     # ponto de equilíbrio aproximado
     v_eq = 0.0
@@ -1747,7 +1763,7 @@ def interpola_trajetorias_mlp_node(
     np.random.seed(seed)
     
     print("\n=== GERAÇÃO DE CONDIÇÕES INICIAIS A PARTIR DA TRAJETÓRIA BASE - OSCILADOR DE FITZHUGH-NAGUMO ===")
-    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}")
+    print(f"  Parâmetros do sistema: ε={epsilon:.4f}, a={a:.2f}, b={b:.2f}, I={I:.2f}, R={R:.2f}")
     print(f"  Ponto de equilíbrio: v*={v_eq:.2f}, w*={w_eq:.2f}")
     print("  Gerando novas condições iniciais variando v0 e w0 dentro dos limites de treino do modelo")
     
@@ -1858,6 +1874,7 @@ def interpola_trajetorias_mlp_node(
             a=a,
             b=b,
             I=I,
+            R=R,
             device='cpu'
         )
         
@@ -1912,6 +1929,7 @@ def interpola_trajetorias_mlp_node(
                 'parametro_a': a,
                 'parametro_b': b,
                 'parametro_I': I,
+                'parametro_R': R,
                 'potencial_eq': v_eq,
                 'recuperacao_eq': w_eq,
                 'tempo': tempos_ajustados[k],
@@ -2009,6 +2027,7 @@ def interpola_trajetorias_mlp_node(
     df_interpolado.attrs['parametro_a'] = a
     df_interpolado.attrs['parametro_b'] = b
     df_interpolado.attrs['parametro_I'] = I
+    df_interpolado.attrs['parametro_R'] = R
     df_interpolado.attrs['potencial_eq'] = v_eq
     df_interpolado.attrs['recuperacao_eq'] = w_eq
     df_interpolado.attrs['v0_min'] = v0_min
@@ -2026,6 +2045,7 @@ def interpola_trajetorias_mlp_node(
         a=a,
         b=b,
         I=I,
+        R=R,
         device='cpu'
     )
     
@@ -2066,7 +2086,7 @@ def interpola_trajetorias_mlp_node(
     
     casos_info_grafico = {
         'v0_base': v0_base,
-        'w0_base': w0_base
+        'w0_base': w0_base,
     }
     
     fig4 = cria_grafico_interpolacao_trajetorias_espaco_fases(
