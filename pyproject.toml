@@ -1,7 +1,7 @@
 [project]
-name = "oscilador_van_der_pol"
+name = "oscilador_fitz_hugh_nagumo"
 version = "0.1.0"
-description = "Oscilador Van der Pol com RK4 e PyTorch"
+description = "Oscilador Fitz Hugh–Nagumo com RK4 e PyTorch"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -16,11 +16,11 @@ dependencies = [
 ]
 
 [project.entry-points."kedro.project_plugins"]
-oscilador_van_der_pol = "oscilador_van_der_pol.plugins"
+oscilador_fitz_hugh_nagumo = "oscilador_fitz_hugh_nagumo.plugins"
 
 [tool.kedro]
-package_name = "oscilador_van_der_pol"
-project_name = "oscilador_van_der_pol"
+package_name = "oscilador_fitz_hugh_nagumo"
+project_name = "oscilador_fitz_hugh_nagumo"
 kedro_init_version = "1.3.0"
 
 [build-system]

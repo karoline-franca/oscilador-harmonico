@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 
-# oscilador_van_der_pol documentation build
+# oscilador_fitz_hugh_nagumo documentation build
 # configuration file, created by sphinx-quickstart.
 #
 # This file is execfile()d with the current directory set to its
@@ -19,11 +19,11 @@
 #
 import re
 
-from oscilador_van_der_pol import __version__ as release
+from oscilador_fitz_hugh_nagumo import __version__ as release
 
 # -- Project information -----------------------------------------------------
 
-project = "oscilador_van_der_pol"
+project = "oscilador_fitz_hugh_nagumo"
 author = "Kedro"
 
 # The short X.Y version.
@@ -119,7 +119,7 @@ html_show_copyright = False
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = "oscilador_van_der_poldoc"
+htmlhelp_basename = "oscilador_fitz_hugh_nagumodoc"
 
 # -- Options for LaTeX output ------------------------------------------------
 
@@ -147,8 +147,8 @@ latex_elements = {
 latex_documents = [
     (
         master_doc,
-        "oscilador_van_der_pol.tex",
-        "oscilador_van_der_pol Documentation",
+        "oscilador_fitz_hugh_nagumo.tex",
+        "oscilador_fitz_hugh_nagumo Documentation",
         "Kedro",
         "manual",
     )
@@ -161,8 +161,8 @@ latex_documents = [
 man_pages = [
     (
         master_doc,
-        "oscilador_van_der_pol",
-        "oscilador_van_der_pol Documentation",
+        "oscilador_fitz_hugh_nagumo",
+        "oscilador_fitz_hugh_nagumo Documentation",
         [author],
         1,
     )
@@ -176,11 +176,11 @@ man_pages = [
 texinfo_documents = [
     (
         master_doc,
-        "oscilador_van_der_pol",
-        "oscilador_van_der_pol Documentation",
+        "oscilador_fitz_hugh_nagumo",
+        "oscilador_fitz_hugh_nagumo Documentation",
         author,
-        "oscilador_van_der_pol",
-        "Project oscilador_van_der_pol codebase.",
+        "oscilador_fitz_hugh_nagumo",
+        "Project oscilador_fitz_hugh_nagumo codebase.",
         "Data-Science",
     )
 ]

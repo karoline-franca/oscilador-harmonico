@@ -30,7 +30,7 @@ solucao_rk4:
 
 base_oscilador:
   type: pandas.CSVDataset
-  filepath: data/04_feature/${runtime_params:data_version,default_v1}/base_vdp.csv
+  filepath: data/04_feature/${runtime_params:data_version,default_v1}/base_fhn.csv
   load_args:
     sep: ';'
     encoding: 'latin-1'

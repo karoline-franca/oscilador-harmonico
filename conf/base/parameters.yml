@@ -4,13 +4,25 @@ simulation:
   num_periodos: 1
   dt: 0.01
   save_every: 2
+  t_final_padrao: 100.0              # tempo final para sistemas que não oscilam
 
 intervals:
-  parametro_mu: 0.0                   # parâmetro de não linearidade
-  x0_min: -3.0                        # posição inicial mínima
-  x0_max: 3.0                         # posição inicial máxima
-  y0_min: -3.0                        # velocidade inicial mínima
-  y0_max: 3.0                         # velocidade inicial máxima
+  parametro_epsilon: 0.08            # separação de escalas (0 < epsilon << 1)
+  v0_min: -3.0                       # potencial inicial mínimo
+  v0_max: 3.0                        # potencial inicial máximo
+  w0_min: -3.0                       # recuperação inicial mínima
+  w0_max: 3.0                        # recuperação inicial máxima
+
+# parâmetros fixos
+a: 0.7                               # recuperação (offset da nuliclina de w)
+b: 0.8                               # recuperação (inclinação da nuliclina de w)
+I: 0.5                               # corrente aplicada (entrada externa)
+
+# parâmetros para múltiplos sistemas
+# parametros_epsilon: [0.01, 0.05, 0.08, 0.1, 0.5]  # separação de escalas (0 < epsilon << 1)
+# valores_a: [0.5, 0.7, 0.9]                        # recuperação (offset da nuliclina de w)
+# valores_b: [0.6, 0.8, 1.0]                        # recuperação (inclinação da nuliclina de w)
+# valores_I: [0.3, 0.5, 0.7]                        # corrente aplicada (entrada externa)
 
 seed: 42
 
@@ -23,7 +35,7 @@ visualization:
   hover_font_size: 12
 
 outputs:
-  base_csv: "base_vdp.csv"
+  base_csv: "base_fhn.csv"
 
 mlp:
   hidden_dims: [64, 128, 256]       # camadas ocultas
