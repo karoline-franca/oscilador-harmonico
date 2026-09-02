@@ -15,11 +15,11 @@ from .nodes import (
 
 def create_pipeline(**kwargs) -> Pipeline:
     """
-    Cria o pipeline completo do oscilador de Lotka-Volterra.
+    Cria o pipeline completo do oscilador de Van der Pol.
     
     Pipeline:
-        1. Gera condições iniciais (presas e predadores)
-        2. Gera parâmetros do sistema (a, b, c, d)
+        1. Gera condições iniciais (posição e velocidade)
+        2. Gera parâmetros do sistema (mu)
         3. Executa simulação RK4
         4. Gera base consolidada
         5. Cria visualizações

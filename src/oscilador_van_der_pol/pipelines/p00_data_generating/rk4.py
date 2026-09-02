@@ -2,7 +2,6 @@
 Classe para resolver sistemas de EDOs usando o método Runge-Kutta de 4ª ordem.
 """
 
-import torch
 import numpy as np
 
 

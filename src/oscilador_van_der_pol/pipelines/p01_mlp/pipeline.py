@@ -1,5 +1,5 @@
 """
-Definição do pipeline MLP para o oscilador de Lotka-Volterra.
+Definição do pipeline MLP para o oscilador de Van der Pol.
 """
 
 from kedro.pipeline import Pipeline, node
@@ -21,7 +21,7 @@ from .nodes import (
 
 def create_pipeline(**kwargs) -> Pipeline:
     """
-    Cria o pipeline de treinamento da MLP para o oscilador de Lotka-Volterra.
+    Cria o pipeline de treinamento da MLP para o oscilador de Van der Pol.
     
     Pipeline:
         1. Prepara dados (treino, validação, teste)

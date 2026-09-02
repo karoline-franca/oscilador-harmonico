@@ -1,19 +1,16 @@
 simulation:
   n_sistemas: 1
-  n_condicoes_iniciais: 500
+  n_condicoes_iniciais: 100
   num_periodos: 1
   dt: 0.01
   save_every: 2
 
 intervals:
-  taxa_crescimento: 2.0             # a - taxa de crescimento das presas (1/s)
-  taxa_predacao: 0.5                # b - taxa de predação (1/(indivíduo·s))
-  taxa_mortalidade: 1.0             # c - taxa de mortalidade dos predadores (1/s)
-  taxa_eficiencia: 0.2              # d - eficiência de conversão (1/indivíduo·s)
-  x0_min: 0.5                       # população mínima de presas
-  x0_max: 8.0                       # população máxima de presas
-  y0_min: 0.3                       # população mínima de predadores
-  y0_max: 6.0                       # população máxima de predadores
+  parametro_mu: 0.0                   # parâmetro de não linearidade
+  x0_min: -3.0                        # posição inicial mínima
+  x0_max: 3.0                         # posição inicial máxima
+  y0_min: -3.0                        # velocidade inicial mínima
+  y0_max: 3.0                         # velocidade inicial máxima
 
 seed: 42
 
@@ -26,7 +23,7 @@ visualization:
   hover_font_size: 12
 
 outputs:
-  base_csv: "base_olv.csv"
+  base_csv: "base_vdp.csv"
 
 mlp:
   hidden_dims: [64, 128, 256]       # camadas ocultas

@@ -1,5 +1,5 @@
 """
-Utilitários para o pipeline do oscilador de Lotka-Volterra.
+Utilitários para o pipeline do oscilador de Van der Pol.
 """
 
 import numpy as np
@@ -25,114 +25,14 @@ def formatar_numero_pt_br(numero):
         return str(numero)
 
 
-def cria_grafico_3d(solucao, sistemas_descricao):
-    """
-    Cria visualização 3D com todas as trajetórias de todos os sistemas no espaço de fases
-    para o oscilador de Lotka-Volterra.
-    
-    Espaço de fases: (presas, predadores, tempo)
-    """
-    fig = go.Figure()
-    
-    n_sistemas = solucao['n_sistemas']
-    n_condicoes = solucao['n_condicoes']
-        
-    for i_sistema in range(n_sistemas):
-        cor = CORES_PALETA[i_sistema % len(CORES_PALETA)]
-        a = solucao['taxas_crescimento'][i_sistema]
-        b = solucao['taxas_predacao'][i_sistema]
-        c = solucao['taxas_mortalidade'][i_sistema]
-        d = solucao['taxas_eficiencia'][i_sistema]
-        omega = solucao['frequencias_angulares'][i_sistema]
-        periodo = solucao['periodos'][i_sistema]
-        
-        for i_cond in range(n_condicoes):
-            x0, y0 = solucao['condicoes_iniciais'][i_cond]
-            amp_x = solucao['amplitudes_presas'][i_cond, i_sistema]
-            amp_y = solucao['amplitudes_predadores'][i_cond, i_sistema]
-            H = solucao['constante_movimento'][-1, i_cond, i_sistema]
-            
-            rotulo = (f"<b>{sistemas_descricao[i_sistema]}</b><br>" +
-                     f"a = {a:.3f} (crescimento presas)<br>" +
-                     f"c = {c:.3f} (mortalidade predadores)<br>" +
-                     f"b = {b:.3f} (predação)<br>" +
-                     f"d = {d:.3f} (eficiência)<br>" +
-                     f"T ≈ {periodo:.3f} s<br>" +
-                     f"x₀ = {x0:.3f}, y₀ = {y0:.3f}<br>" +
-                     f"A_x = {amp_x:.3f}, A_y = {amp_y:.3f}<br>" +
-                     f"H = {H:.3f}")
-            
-            if i_cond == 0:
-                nome = f"Sistema {i_sistema}: ω≈{omega:.3f} rad/s"
-                show_legend = True
-            else:
-                nome = f"Traj_S{i_sistema}_C{i_cond}"
-                show_legend = False
-            
-            fig.add_trace(go.Scatter3d(
-                x=solucao['presas'][:, i_cond, i_sistema],
-                y=solucao['predadores'][:, i_cond, i_sistema],
-                z=solucao['tempo'],
-                mode='lines',
-                line=dict(color=cor, width=1.5),
-                name=nome,
-                legendgroup=f'sistema_{i_sistema}',
-                showlegend=show_legend,
-                opacity=0.9,
-                hovertemplate=rotulo + '<br>Presas: %{x:.3f}<br>Predadores: %{y:.3f}<br>Tempo: %{z:.3f} s<extra></extra>'
-            ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 3D - Oscilador de Lotka-Volterra</span><br><br>" +
-                 f"<span style='font-size:18px; color:#555555;'>" +
-                 f"Nro de sistemas: {n_sistemas} | " +
-                 f"Nro de condições iniciais por sistema: {n_condicoes} | " +
-                 f"Total de {n_sistemas * n_condicoes} trajetórias</span>",
-            x=0.5,
-            y=0.95,
-            font=dict(size=16)
-        ),
-
-        scene=dict(
-            xaxis_title="Presas (x)",
-            yaxis_title="Predadores (y)",
-            zaxis_title="Tempo (s)",
-            camera=dict(
-                eye=dict(x=1.5, y=1.5, z=1.2),
-                up=dict(x=0, y=0, z=1)
-            )
-        ),
-        width=1200,
-        height=900,
-        legend=dict(
-            title="Sistemas",
-            yanchor="top",
-            y=0.80,
-            xanchor="left",
-            x=0.80,
-            bgcolor="rgba(255, 255, 255, 0.9)",
-            bordercolor="Black",
-            borderwidth=1,
-            font=dict(size=12)
-        ),
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=16,
-            font_family="Arial"
-        )
-    )
-    
-    return fig
-
-
 def cria_grafico_2d(solucao, sistemas_descricao):
     """
     Cria um único gráfico 2D com todas as trajetórias de todos os sistemas no espaço de fases
-    para o oscilador de Lotka-Volterra.
+    para o oscilador de Van der Pol.
     
-    Espaço de fases: (presas, predadores)
+    Espaço de fases: (posição, velocidade)
     Os pontos das condições iniciais são destacados em preto.
+    O ciclo limite teórico (círculo de raio 2) é mostrado como referência.
     """
     fig = go.Figure()
     
@@ -141,73 +41,82 @@ def cria_grafico_2d(solucao, sistemas_descricao):
     
     for i_sistema in range(n_sistemas):
         cor = CORES_PALETA[i_sistema % len(CORES_PALETA)]
-        a = solucao['taxas_crescimento'][i_sistema]
-        b = solucao['taxas_predacao'][i_sistema]
-        c = solucao['taxas_mortalidade'][i_sistema]
-        d = solucao['taxas_eficiencia'][i_sistema]
-        omega = solucao['frequencias_angulares'][i_sistema]
-        x_eq = solucao['presas_eq'][i_sistema]
-        y_eq = solucao['predadores_eq'][i_sistema]
+        mu = solucao['parametros_mu'][i_sistema]
+        x_eq = solucao['posicao_eq'][i_sistema]
+        y_eq = solucao['velocidade_eq'][i_sistema]
+        
+        amp_ciclo_teorica = solucao.get('amplitude_ciclo_limite_teorica', 2.0)[i_sistema]
+        
         x0_list = []
         y0_list = []
         
         for i_cond in range(n_condicoes):
             x0, y0 = solucao['condicoes_iniciais'][i_cond]
-            amp_x = solucao['amplitudes_presas'][i_cond, i_sistema]
-            amp_y = solucao['amplitudes_predadores'][i_cond, i_sistema]
-            H = solucao['constante_movimento'][-1, i_cond, i_sistema]
+            amp_x = solucao['amplitude_posicao'][i_cond, i_sistema] if 'amplitude_posicao' in solucao else 0.0
             x0_list.append(x0)
             y0_list.append(y0)
             
-            # cria nome legível para a legenda (mostra apenas o primeiro de cada sistema)
-            if i_cond == 0:  # mostra apenas um item por sistema na legenda
-                nome = f"Sistema {i_sistema}: ω≈{omega:.3f} rad/s"
+            if i_cond == 0:
+                nome = f"Sistema {i_sistema}"
                 show_legend = True
             else:
                 nome = f"Traj_S{i_sistema}_C{i_cond}"
                 show_legend = False
             
             fig.add_trace(go.Scatter(
-                x=solucao['presas'][:, i_cond, i_sistema],
-                y=solucao['predadores'][:, i_cond, i_sistema],
+                x=solucao['posicao'][:, i_cond, i_sistema],
+                y=solucao['velocidade'][:, i_cond, i_sistema],
                 mode='lines',
-                line=dict(color=cor, width=1.0),
+                line=dict(color=cor, width=1.5),
                 name=nome,
                 legendgroup=f'sistema_{i_sistema}',
                 showlegend=show_legend,
                 opacity=0.8,
                 hovertemplate=(
                     f"<b>{sistemas_descricao[i_sistema]}</b><br>" +
-                    f"a = {a:.3f}, b = {b:.3f}<br>" +
-                    f"c = {c:.3f}, d = {d:.3f}<br>" +
+                    f"mu = {mu:.3f}<br>" +
                     f"x* = {x_eq:.3f}, y* = {y_eq:.3f}<br>" +
                     f"x₀ = {x0:.3f}, y₀ = {y0:.3f}<br>" +
-                    f"A_x = {amp_x:.3f}, A_y = {amp_y:.3f}<br>" +
-                    f"H = {H:.3f}<br>" +
-                    f"Presas: %{{x:.3f}}<br>" +
-                    f"Predadores: %{{y:.3f}}<br>" +
+                    f"A_x = {amp_x:.3f}<br>" +
+                    f"Posição: %{{x:.3f}}<br>" +
+                    f"Velocidade: %{{y:.3f}}<br>" +
                     f"<extra></extra>"
                 )
             ))
         
-        # ponto de equilíbrio
         fig.add_trace(go.Scatter(
             x=[x_eq],
             y=[y_eq],
             mode='markers',
             marker=dict(
                 color='orange',
-                size=8,
-                symbol='circle',
-                line=dict(color='orange', width=1)
+                size=10,
+                symbol='x',
+                line=dict(color='orange', width=2)
             ),
-            name=f'Equilíbrio - Sistema {i_sistema}',
-            legendgroup=f'sistema_{i_sistema}',
-            showlegend=False,
+            name=f'Ponto de Equilíbrio',
+            legendgroup=f'equilibrio_{i_sistema}',
+            showlegend=True,
             hovertemplate=(
                 f"<b>Ponto de Equilíbrio - {sistemas_descricao[i_sistema]}</b><br>" +
                 f"x* = {x_eq:.3f}<br>" +
                 f"y* = {y_eq:.3f}<br>" +
+                f"<extra></extra>"
+            )
+        ))
+
+        theta = np.linspace(0, 2*np.pi, 100)
+        fig.add_trace(go.Scatter(
+            x=amp_ciclo_teorica * np.cos(theta),
+            y=amp_ciclo_teorica * np.sin(theta),
+            mode='lines',
+            line=dict(color='gray', width=2, dash='dash'),
+            name=f'Ciclo Limite',
+            legendgroup=f'ciclo_limite_{i_sistema}',
+            showlegend=True,
+            hovertemplate=(
+                f"<b>Ciclo Limite Teórico - Sistema {i_sistema}</b><br>" +
+                f"Amplitude = {amp_ciclo_teorica:.3f}<br>" +
                 f"<extra></extra>"
             )
         ))
@@ -218,13 +127,13 @@ def cria_grafico_2d(solucao, sistemas_descricao):
             mode='markers',
             marker=dict(
                 color='blue',
-                size=8,
+                size=6,
                 symbol='circle',
                 line=dict(color='blue', width=1)
             ),
-            name=f'Condições Iniciais - Sistema {i_sistema}',
-            legendgroup=f'sistema_{i_sistema}',
-            showlegend=False,
+            name=f'Condição Inicial',
+            legendgroup=f'cond_iniciais_{i_sistema}',
+            showlegend=True,
             hovertemplate=(
                 f"<b>Condição Inicial - {sistemas_descricao[i_sistema]}</b><br>" +
                 f"x₀ = %{{x:.3f}}<br>" +
@@ -233,25 +142,9 @@ def cria_grafico_2d(solucao, sistemas_descricao):
             )
         ))
     
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(color='blue', size=8, symbol='circle', line=dict(color='blue', width=1)),
-        name='Condições Iniciais',
-        showlegend=True
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(color='orange', size=8, symbol='circle', line=dict(color='orange', width=1)),
-        name='Pontos de Equilíbrio',
-        showlegend=True
-    ))
-    
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 2D - Oscilador de Lotka-Volterra</span><br><br>" +
+            text=f"<span style='font-size:20px; font-weight:bold;'>Espaço de Fases 2D - Oscilador de Van der Pol</span><br><br>" +
                  f"<span style='font-size:18px; color:#555555;'>" +
                  f"Nro. de sistemas: {n_sistemas} | " +
                  f"Nro. de condições iniciais por sistema: {n_condicoes} | " +
@@ -260,24 +153,27 @@ def cria_grafico_2d(solucao, sistemas_descricao):
             y=0.95,
             font=dict(size=20)
         ),
-        xaxis_title="Presas (x)",
-        yaxis_title="Predadores (y)",
+        xaxis_title="Posição (x)",
+        yaxis_title="Velocidade (y)",
         width=1400,
         height=1000,
         legend=dict(
             title="Legenda",
-            x=0.95,
+            x=1.02,
             y=0.85,
             xanchor="left",
             yanchor="top",
             bgcolor="rgba(255, 255, 255, 0.9)",
             bordercolor="black",
             borderwidth=1,
-            font=dict(size=16)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers",
+            tracegroupgap=5
         ),
         hovermode='closest',
         plot_bgcolor='white',
-        margin=dict(t=150),
+        margin=dict(t=150, r=250),
         xaxis=dict(
             showgrid=False,
             gridcolor='lightgray',
@@ -285,7 +181,8 @@ def cria_grafico_2d(solucao, sistemas_descricao):
             zerolinecolor='black',
             zerolinewidth=1,
             title_font=dict(size=16),
-            tickfont=dict(size=16)
+            tickfont=dict(size=16),
+            range=[-3.5, 3.5]
         ),
         yaxis=dict(
             showgrid=False,
@@ -295,6 +192,7 @@ def cria_grafico_2d(solucao, sistemas_descricao):
             zerolinewidth=1,
             title_font=dict(size=16),
             tickfont=dict(size=16),
+            range=[-3.5, 3.5]
         )
     )
     
@@ -304,7 +202,7 @@ def cria_grafico_2d(solucao, sistemas_descricao):
 def cria_grafico_distribuicao_amplitudes(
     amplitudes: np.ndarray,
     amplitude_limite_internas: float = None,
-    titulo: str = "Distribuição das Amplitudes das Trajetórias"
+    titulo: str = "Distribuição das Amplitudes das Trajetórias - Oscilador de Van der Pol"
 ) -> go.Figure:
     """
     Cria gráfico da distribuição das amplitudes das trajetórias no espaço de fases.
@@ -326,7 +224,7 @@ def cria_grafico_distribuicao_amplitudes(
         nbinsx=30,
         name='Distribuição das Amplitudes',
         marker=dict(color='#1565C0', opacity=0.7),
-        hovertemplate='Amplitude: %{x:.4f} m<br>Frequência: %{y}<extra></extra>'
+        hovertemplate='Amplitude: %{x:.4f} <br>Frequência: %{y}<extra></extra>'
     ))
     
     if amplitude_limite_internas is not None:
@@ -373,9 +271,9 @@ def cria_grafico_distribuicao_amplitudes(
     else:
         texto_estatisticas = (
             f"<sup>Total: {len(amplitudes)} trajetórias | "
-            f"Amplitude Mín: {amplitude_min:.4f} m | "
-            f"Amplitude Máx: {amplitude_max:.4f} m | "
-            f"Mediana: {amplitude_mediana:.4f} m"
+            f"Amplitude Mín: {amplitude_min:.4f} | "
+            f"Amplitude Máx: {amplitude_max:.4f} | "
+            f"Mediana: {amplitude_mediana:.4f}"
         )
     
     fig.update_layout(
@@ -387,7 +285,7 @@ def cria_grafico_distribuicao_amplitudes(
             y=0.95,
             font=dict(size=16)
         ),
-        xaxis_title="Amplitude (m)",
+        xaxis_title="Amplitude",
         yaxis_title="Frequência",
         width=1200,
         height=700,
@@ -429,103 +327,149 @@ def cria_grafico_distribuicao_amplitudes(
     return fig
 
 
-def cria_grafico_pesos_por_amplitude(
-    amplitudes: np.ndarray,
-    pesos: np.ndarray,
-    titulo: str = "Distribuição dos Pesos por Amplitude"
-) -> go.Figure:
+def cria_grafico_distribuicao_dados(
+    y_pos_train, y_vel_train,
+    y_pos_val, y_vel_val,
+    y_pos_test, y_vel_test,
+    titulo="Distribuição dos Dados no Espaço de Fases - Oscilador de Van der Pol"
+):
     """
-    Cria gráfico da relação entre pesos e amplitudes das trajetórias.
+    Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
+    Para trajetórias completas, os dados são achatados para visualização pontual.
     
     Args:
-        amplitudes: Array com as amplitudes das trajetórias
-        pesos: Array com os pesos atribuídos a cada trajetória
+        y_pos_train: Posições de treino
+        y_vel_train: Velocidades de treino
+        y_pos_val: Posições de validação
+        y_vel_val: Velocidades de validação
+        y_pos_test: Posições de teste
+        y_vel_test: Velocidades de teste
         titulo: Título do gráfico
         
     Returns:
         Figura Plotly
     """
-    
     fig = go.Figure()
     
+    # achata as trajetórias para visualização
+    y_pos_train_flat = y_pos_train.flatten() if y_pos_train.ndim > 1 else y_pos_train
+    y_vel_train_flat = y_vel_train.flatten() if y_vel_train.ndim > 1 else y_vel_train
+    y_pos_val_flat = y_pos_val.flatten() if y_pos_val.ndim > 1 else y_pos_val
+    y_vel_val_flat = y_vel_val.flatten() if y_vel_val.ndim > 1 else y_vel_val
+    y_pos_test_flat = y_pos_test.flatten() if y_pos_test.ndim > 1 else y_pos_test
+    y_vel_test_flat = y_vel_test.flatten() if y_vel_test.ndim > 1 else y_vel_test
+    
+    # treino
     fig.add_trace(go.Scatter(
-        x=amplitudes,
-        y=pesos,
+        x=y_pos_train_flat,
+        y=y_vel_train_flat,
         mode='markers',
-        name='Peso vs Amplitude',
+        name='Dados de Treino (70%)',
         marker=dict(
-            color=pesos,
-            colorscale='Viridis',
-            size=10,
-            showscale=True,
-            colorbar=dict(title="Peso")
+            color='#2E7D32',
+            size=3,
+            opacity=0.5,
+            symbol='circle'
         ),
         hovertemplate=(
-            f"<b>Trajetória</b><br>" +
-            f"Amplitude: %{{x:.4f}} m<br>" +
-            f"Peso: %{{y:.4f}}<br>" +
+            f"<b>Dados de Treino</b><br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
     
-    # linha de tendência
-    z = np.polyfit(amplitudes, pesos, 1)
-    p = np.poly1d(z)
-    x_trend = np.linspace(amplitudes.min(), amplitudes.max(), 100)
-    y_trend = p(x_trend)
-    
+    # validação
     fig.add_trace(go.Scatter(
-        x=x_trend,
-        y=y_trend,
-        mode='lines',
-        name='Tendência',
-        line=dict(color='red', width=2, dash='dash'),
-        hovertemplate='Tendência: %{y:.4f}<extra></extra>'
+        x=y_pos_val_flat,
+        y=y_vel_val_flat,
+        mode='markers',
+        name='Dados de Validação (20%)',
+        marker=dict(
+            color='#4A148C',
+            size=3,
+            opacity=0.5,
+            symbol='square'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Validação</b><br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
+            f"<extra></extra>"
+        )
     ))
-        
+    
+    # teste
+    fig.add_trace(go.Scatter(
+        x=y_pos_test_flat,
+        y=y_vel_test_flat,
+        mode='markers',
+        name='Dados de Teste (10%)',
+        marker=dict(
+            color='#B71C1C',
+            size=3,
+            opacity=0.5,
+            symbol='diamond'
+        ),
+        hovertemplate=(
+            f"<b>Dados de Teste</b><br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
+            f"<extra></extra>"
+        )
+    ))
+    
+    n_train = len(y_pos_train_flat)
+    n_val = len(y_pos_val_flat)
+    n_test = len(y_pos_test_flat)
+    total = n_train + n_val + n_test
+    
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
-            x=0.5,
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
+                 f"<span style='font-size:20px; color:#555555;'>" +
+                 f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
+                 f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
+                 f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
+            x=0.50,
             y=0.95,
-            font=dict(size=16)
+            font=dict(size=20)
         ),
-        xaxis_title="Amplitude (m)",
-        yaxis_title="Peso",
-        width=1200,
-        height=700,
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
+        width=1400,
+        height=1000,
         legend=dict(
             title="Legenda",
             x=0.85,
-            y=0.95,
-            bgcolor='rgba(255, 255, 255, 0.95)',
-            bordercolor='gray',
+            y=0.98,
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=16),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
-        paper_bgcolor='white',
-        margin=dict(t=150, b=80, l=80, r=80),
+        margin=dict(t=150),
         xaxis=dict(
-            showgrid=True,
+            showgrid=False,
             gridcolor='lightgray',
-            gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='lightgray',
+            zerolinecolor='black',
             zerolinewidth=1,
             title_font=dict(size=16),
-            tickfont=dict(size=14)
+            tickfont=dict(size=16)
         ),
         yaxis=dict(
-            showgrid=True,
+            showgrid=False,
             gridcolor='lightgray',
-            gridwidth=0.5,
             zeroline=True,
-            zerolinecolor='lightgray',
+            zerolinecolor='black',
             zerolinewidth=1,
             title_font=dict(size=16),
-            tickfont=dict(size=14)
+            tickfont=dict(size=16)
         )
     )
     
@@ -534,10 +478,10 @@ def cria_grafico_pesos_por_amplitude(
 
 def cria_grafico_historico_treinamento(
     history: Dict,
-    titulo: str = "Evolução da Função de Custo durante o Treinamento"
+    titulo: str = "Evolução da Função de Custo durante o Treinamento - Oscilador de Van der Pol"
 ) -> go.Figure:
     """
-    Cria gráfico da evolução das losses de treino e validação ao longo das épocas.
+    Cria gráfico da evolução das funções de custo de treino e validação ao longo das épocas.
     
     Args:
         history: Dicionário contendo 'train_loss' e 'val_loss'
@@ -551,7 +495,7 @@ def cria_grafico_historico_treinamento(
     
     fig = go.Figure()
     
-    # loss de treino
+    # função de custo de treino
     fig.add_trace(go.Scatter(
         x=epochs,
         y=history['train_loss'],
@@ -601,7 +545,9 @@ def cria_grafico_historico_treinamento(
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -633,154 +579,7 @@ def cria_grafico_historico_treinamento(
     return fig
 
 
-def cria_grafico_distribuicao_dados(
-    y_pos_train, y_vel_train,
-    y_pos_val, y_vel_val,
-    y_pos_test, y_vel_test,
-    titulo="Distribuição dos Dados no Espaço de Fases"
-):
-    """
-    Cria gráfico 2D mostrando a distribuição dos dados de treino, validação e teste no espaço de fases.
-    Para trajetórias completas, os dados são achatados para visualização pontual.
-    
-    Args:
-        y_pos_train: Posições de treino
-        y_vel_train: Velocidades de treino
-        y_pos_val: Posições de validação
-        y_vel_val: Velocidades de validação
-        y_pos_test: Posições de teste
-        y_vel_test: Velocidades de teste
-        titulo: Título do gráfico
-        
-    Returns:
-        Figura Plotly
-    """
-    fig = go.Figure()
-    
-    # achata as trajetórias para visualização
-    y_pos_train_flat = y_pos_train.flatten() if y_pos_train.ndim > 1 else y_pos_train
-    y_vel_train_flat = y_vel_train.flatten() if y_vel_train.ndim > 1 else y_vel_train
-    y_pos_val_flat = y_pos_val.flatten() if y_pos_val.ndim > 1 else y_pos_val
-    y_vel_val_flat = y_vel_val.flatten() if y_vel_val.ndim > 1 else y_vel_val
-    y_pos_test_flat = y_pos_test.flatten() if y_pos_test.ndim > 1 else y_pos_test
-    y_vel_test_flat = y_vel_test.flatten() if y_vel_test.ndim > 1 else y_vel_test
-    
-    # treino
-    fig.add_trace(go.Scatter(
-        x=y_pos_train_flat,
-        y=y_vel_train_flat,
-        mode='markers',
-        name='Dados de Treino (70%)',
-        marker=dict(
-            color='#2E7D32',
-            size=3,
-            opacity=0.5,
-            symbol='circle'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Treino</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    # validação
-    fig.add_trace(go.Scatter(
-        x=y_pos_val_flat,
-        y=y_vel_val_flat,
-        mode='markers',
-        name='Dados de Validação (20%)',
-        marker=dict(
-            color='#4A148C',
-            size=3,
-            opacity=0.5,
-            symbol='square'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Validação</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    # teste
-    fig.add_trace(go.Scatter(
-        x=y_pos_test_flat,
-        y=y_vel_test_flat,
-        mode='markers',
-        name='Dados de Teste (10%)',
-        marker=dict(
-            color='#B71C1C',
-            size=3,
-            opacity=0.5,
-            symbol='diamond'
-        ),
-        hovertemplate=(
-            f"<b>Dados de Teste</b><br>" +
-            f"Posição: %{{x:.3f}} m<br>" +
-            f"Velocidade: %{{y:.3f}} m/s<br>" +
-            f"<extra></extra>"
-        )
-    ))
-    
-    n_train = len(y_pos_train_flat)
-    n_val = len(y_pos_val_flat)
-    n_test = len(y_pos_test_flat)
-    total = n_train + n_val + n_test
-    
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
-                 f"<span style='font-size:20px; color:#555555;'>" +
-                 f"<sup>Treino: {n_train} ({n_train/total*100:.1f}%) | " +
-                 f"Validação: {n_val} ({n_val/total*100:.1f}%) | " +
-                 f"Teste: {n_test} ({n_test/total*100:.1f}%)</sup>",
-            x=0.50,
-            y=0.95,
-            font=dict(size=20)
-        ),
-        xaxis_title="Posição (m)",
-        yaxis_title="Velocidade (m/s)",
-        width=1400,
-        height=1000,
-        legend=dict(
-            title="Legenda",
-            x=0.85,
-            y=0.98,
-            bgcolor='rgba(255, 255, 255, 0.9)',
-            bordercolor='black',
-            borderwidth=1,
-            font=dict(size=16)
-        ),
-        hovermode='closest',
-        plot_bgcolor='white',
-        margin=dict(t=150),
-        xaxis=dict(
-            showgrid=False,
-            gridcolor='lightgray',
-            zeroline=True,
-            zerolinecolor='black',
-            zerolinewidth=1,
-            title_font=dict(size=16),
-            tickfont=dict(size=16)
-        ),
-        yaxis=dict(
-            showgrid=False,
-            gridcolor='lightgray',
-            zeroline=True,
-            zerolinecolor='black',
-            zerolinewidth=1,
-            title_font=dict(size=16),
-            tickfont=dict(size=16)
-        )
-    )
-    
-    return fig
-
-
-def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Modelo MLP - Lotka-Volterra"):
+def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Modelo MLP - Oscilador de Van der Pol"):
     """
     Cria gráficos de dispersão para visualizar as previsões do modelo MLP.
     Para trajetórias completas, os dados são achatados para visualização pontual.
@@ -795,41 +594,40 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
     """
     fig = make_subplots(
         rows=1, cols=2,
-        subplot_titles=('Presas', 'Predadores'),
+        subplot_titles=('Posição', 'Velocidade'),
         horizontal_spacing=0.15
     )
     
     # achata as trajetórias para visualização pontual
     if predictions.ndim > 1:
-        # separa presas e predadores das trajetórias
-        presas_pred = predictions[:, 0::2].flatten()
-        predadores_pred = predictions[:, 1::2].flatten()
-        presas_true = y_true[:, 0::2].flatten()
-        predadores_true = y_true[:, 1::2].flatten()
+        # separa posição e velocidade das trajetórias
+        posicao_pred = predictions[:, 0::2].flatten()
+        velocidade_pred = predictions[:, 1::2].flatten()
+        posicao_true = y_true[:, 0::2].flatten()
+        velocidade_true = y_true[:, 1::2].flatten()
     else:
-        presas_pred = predictions[:, 0]
-        predadores_pred = predictions[:, 1]
-        presas_true = y_true[:, 0]
-        predadores_true = y_true[:, 1]
+        posicao_pred = predictions[:, 0]
+        velocidade_pred = predictions[:, 1]
+        posicao_true = y_true[:, 0]
+        velocidade_true = y_true[:, 1]
     
     cores = ['blue', 'green']
-    nomes = ['Presas', 'Predadores']
-    unidades = ['', '']
+    nomes = ['Posição', 'Velocidade']
     
-    # presas
+    # posição
     fig.add_trace(
         go.Scatter(
-            x=presas_true,
-            y=presas_pred,
+            x=posicao_true,
+            y=posicao_pred,
             mode='markers',
-            name='Presas',
+            name='Posição',
             marker=dict(
                 color=cores[0],
                 size=3,
                 opacity=0.5
             ),
             hovertemplate=(
-                f"<b>Presas</b><br>" +
+                f"<b>Posição</b><br>" +
                 f"Valor Real: %{{x:.3f}}<br>" +
                 f"Valor Previsto: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
@@ -838,20 +636,20 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
         row=1, col=1
     )
     
-    # predadores
+    # velocidade
     fig.add_trace(
         go.Scatter(
-            x=predadores_true,
-            y=predadores_pred,
+            x=velocidade_true,
+            y=velocidade_pred,
             mode='markers',
-            name='Predadores',
+            name='Velocidade',
             marker=dict(
                 color=cores[1],
                 size=3,
                 opacity=0.5
             ),
             hovertemplate=(
-                f"<b>Predadores</b><br>" +
+                f"<b>Velocidade</b><br>" +
                 f"Valor Real: %{{x:.3f}}<br>" +
                 f"Valor Previsto: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
@@ -863,11 +661,11 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
     # linha y=x (referência) para ambos os gráficos
     for i in range(2):
         if i == 0:
-            min_val = min(presas_true.min(), presas_pred.min())
-            max_val = max(presas_true.max(), presas_pred.max())
+            min_val = min(posicao_true.min(), posicao_pred.min())
+            max_val = max(posicao_true.max(), posicao_pred.max())
         else:
-            min_val = min(predadores_true.min(), predadores_pred.min())
-            max_val = max(predadores_true.max(), predadores_pred.max())
+            min_val = min(velocidade_true.min(), velocidade_pred.min())
+            max_val = max(velocidade_true.max(), velocidade_pred.max())
         
         fig.add_trace(
             go.Scatter(
@@ -906,17 +704,17 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             tickfont=dict(size=16)
         )
     
-    rmse_presas = np.sqrt(mean_squared_error(presas_true, presas_pred))
-    rmse_predadores = np.sqrt(mean_squared_error(predadores_true, predadores_pred))
-    r2_presas = r2_score(presas_true, presas_pred)
-    r2_predadores = r2_score(predadores_true, predadores_pred)
+    rmse_posicao = np.sqrt(mean_squared_error(posicao_true, posicao_pred))
+    rmse_velocidade = np.sqrt(mean_squared_error(velocidade_true, velocidade_pred))
+    r2_posicao = r2_score(posicao_true, posicao_pred)
+    r2_velocidade = r2_score(velocidade_true, velocidade_pred)
     
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
-                 f"<sup>RMSE Presas: {rmse_presas:.4f} | RMSE Predadores: {rmse_predadores:.4f}</sup><br>" +
-                 f"<sup>R² Presas: {r2_presas:.4f} | R² Predadores: {r2_predadores:.4f}</sup>",
+                 f"<sup>RMSE Posição: {rmse_posicao:.4f} | RMSE Velocidade: {rmse_velocidade:.4f}</sup><br>" +
+                 f"<sup>R² Posição: {r2_posicao:.4f} | R² Velocidade: {r2_velocidade:.4f}</sup>",
             x=0.45,
             y=0.97,
             font=dict(size=16)
@@ -933,7 +731,9 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=16)
+            font=dict(size=16),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -942,21 +742,20 @@ def cria_grafico_real_previsto_mlp(predictions, y_true, titulo="Previsões do Mo
     
     return fig
 
-
 def cria_grafico_previsoes_espaco_fases(
     y_pos_true, y_vel_true,
     y_pos_pred, y_vel_pred,
-    titulo="Previsões do Modelo no Espaço de Fases - Lotka-Volterra"
+    titulo="Previsões do Modelo no Espaço de Fases - Oscilador de Van der Pol"
 ):
     """
     Cria gráfico 2D mostrando as previsões do modelo no espaço de fases.
     Para trajetórias completas, os dados são achatados para visualização pontual.
     
     Args:
-        y_pos_true: Presas reais
-        y_vel_true: Predadores reais
-        y_pos_pred: Presas previstas
-        y_vel_pred: Predadores previstos
+        y_pos_true: Posições reais
+        y_vel_true: Velocidades reais
+        y_pos_pred: Posições previstas
+        y_vel_pred: Velocidades previstas
         titulo: Título do gráfico
         
     Returns:
@@ -990,8 +789,8 @@ def cria_grafico_previsoes_espaco_fases(
         ),
         hovertemplate=(
             f"<b>MLP</b><br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
@@ -1010,29 +809,29 @@ def cria_grafico_previsoes_espaco_fases(
         ),
         hovertemplate=(
             f"<b>Dados de Teste</b><br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
 
-    rmse_presas = np.sqrt(mean_squared_error(y_pos_true_flat, y_pos_pred_flat))
-    rmse_predadores = np.sqrt(mean_squared_error(y_vel_true_flat, y_vel_pred_flat))
-    r2_presas = r2_score(y_pos_true_flat, y_pos_pred_flat)
-    r2_predadores = r2_score(y_vel_true_flat, y_vel_pred_flat)
+    rmse_posicao = np.sqrt(mean_squared_error(y_pos_true_flat, y_pos_pred_flat))
+    rmse_velocidade = np.sqrt(mean_squared_error(y_vel_true_flat, y_vel_pred_flat))
+    r2_posicao = r2_score(y_pos_true_flat, y_pos_pred_flat)
+    r2_velocidade = r2_score(y_vel_true_flat, y_vel_pred_flat)
     
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
-                 f"<sup>RMSE Presas: {rmse_presas:.4f} | RMSE Predadores: {rmse_predadores:.4f}</sup><br>" +
-                 f"<sup>R² Presas: {r2_presas:.4f} | R² Predadores: {r2_predadores:.4f}</sup>",
+                 f"<sup>RMSE Posição: {rmse_posicao:.4f} | RMSE Velocidade: {rmse_velocidade:.4f}</sup><br>" +
+                 f"<sup>R² Posição: {r2_posicao:.4f} | R² Velocidade: {r2_velocidade:.4f}</sup>",
             x=0.5,
             y=0.95,
             font=dict(size=16)
         ),
-        xaxis_title="Presas",
-        yaxis_title="Predadores",
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
         width=1400,
         height=1000,
         legend=dict(
@@ -1042,7 +841,9 @@ def cria_grafico_previsoes_espaco_fases(
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -1219,19 +1020,21 @@ def cria_grafico_trajetorias_completas(
     return fig
 
 
-def cria_grafico_interpolacao_espaco_fases(
-    presas_lista,
-    predadores_lista,
+def cria_grafico_interpolacao_completo(
+    tempos_lista,
+    posicao_lista,
+    velocidade_lista,
     casos_info,
-    titulo="Interpolação do Modelo no Espaço de Fases - Lotka-Volterra"
+    titulo="Interpolação do Modelo: Posição e Velocidade vs Tempo - Oscilador de Van der Pol"
 ):
     """
-    Cria gráfico 2D mostrando as trajetórias previstas no espaço de fases.
+    Cria gráfico 2D combinando posição e velocidade no tempo.
     Trabalha com trajetórias completas previstas a partir das condições iniciais.
     
     Args:
-        presas_lista: Lista de arrays com as presas previstas para cada caso
-        predadores_lista: Lista de arrays com os predadores previstos para cada caso
+        tempos_lista: Lista de arrays com os tempos para cada caso
+        posicao_lista: Lista de arrays com as posições previstas para cada caso
+        velocidade_lista: Lista de arrays com as velocidades previstas para cada caso
         casos_info: Lista de dicionários com informações dos casos (nome, x0, y0, cor, nome_legenda)
         titulo: Título do gráfico
         
@@ -1240,15 +1043,137 @@ def cria_grafico_interpolacao_espaco_fases(
     """
     fig = go.Figure()
     
-    for i, (presas, predadores) in enumerate(zip(presas_lista, predadores_lista)):
+    def clarear_cor(cor, fator=0.5):
+        """Clareia uma cor hexadecimal."""
+        cor = cor.lstrip('#')
+        r, g, b = int(cor[0:2], 16), int(cor[2:4], 16), int(cor[4:6], 16)
+        r = min(255, int(r + (255 - r) * fator))
+        g = min(255, int(g + (255 - g) * fator))
+        b = min(255, int(b + (255 - b) * fator))
+        return f'#{r:02x}{g:02x}{b:02x}'
+    
+    for i, (tempos, posicao, velocidade) in enumerate(zip(tempos_lista, posicao_lista, velocidade_lista)):
+        caso = casos_info[i]
+        
+        nome_legenda = caso.get('nome_legenda', caso['nome'])
+        
+        cor_velocidade = clarear_cor(caso['cor'], fator=0.6)
+        
+        # posição
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=posicao,
+            mode='lines',
+            name=f"{nome_legenda} - Posição",
+            line=dict(color=caso['cor'], width=2, dash='solid'),
+            legendgroup=f"posicao_{i}",
+            hovertemplate=(
+                f"<b>{nome_legenda} - Posição</b><br>" +
+                f"x₀ = {caso['x0']:.3f}<br>" +
+                f"y₀ = {caso['y0']:.3f}<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Posição: %{{y:.3f}}<br>" +
+                f"<extra></extra>"
+            )
+        ))
+        
+        # velocidade
+        fig.add_trace(go.Scatter(
+            x=tempos,
+            y=velocidade,
+            mode='lines',
+            name=f"{nome_legenda} - Velocidade",
+            line=dict(color=cor_velocidade, width=2, dash='solid'),
+            legendgroup=f"velocidade_{i}",
+            hovertemplate=(
+                f"<b>{nome_legenda} - Velocidade</b><br>" +
+                f"x₀ = {caso['x0']:.3f}<br>" +
+                f"y₀ = {caso['y0']:.3f}<br>" +
+                f"Tempo: %{{x:.3f}} s<br>" +
+                f"Velocidade: %{{y:.3f}}<br>" +
+                f"<extra></extra>"
+            )
+        ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
+            x=0.35,
+            font=dict(size=16)
+        ),
+        xaxis_title="Tempo (s)",
+        yaxis_title="Estado",
+        width=1400,
+        height=900,
+        legend=dict(
+            title="Legenda",
+            x=1.05,
+            y=0.75,
+            xanchor='left',
+            yanchor='top',
+            bgcolor='rgba(255, 255, 255, 0.9)',
+            bordercolor='black',
+            borderwidth=1,
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
+        ),
+        hovermode='closest',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='darkgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='darkgray',
+            zeroline=True,
+            zerolinecolor='darkgray',
+            zerolinewidth=1,
+            title_font=dict(size=16),
+            tickfont=dict(size=16)
+        )
+    )
+    
+    return fig
+
+
+def cria_grafico_interpolacao_espaco_fases(
+    posicao_lista,
+    velocidade_lista,
+    casos_info,
+    titulo="Interpolação do Modelo no Espaço de Fases - Oscilador de Van der Pol"
+):
+    """
+    Cria gráfico 2D mostrando as trajetórias previstas no espaço de fases.
+    Trabalha com trajetórias completas previstas a partir das condições iniciais.
+    
+    Args:
+        posicao_lista: Lista de arrays com as posições previstas para cada caso
+        velocidade_lista: Lista de arrays com as velocidades previstas para cada caso
+        casos_info: Lista de dicionários com informações dos casos (nome, x0, y0, cor, nome_legenda)
+        titulo: Título do gráfico
+        
+    Returns:
+        Figura Plotly
+    """
+    fig = go.Figure()
+    
+    for i, (posicao, velocidade) in enumerate(zip(posicao_lista, velocidade_lista)):
         caso = casos_info[i]
         
         nome_legenda = caso.get('nome_legenda', caso['nome'])
         
         # trajetória completa no espaço de fases
         fig.add_trace(go.Scatter(
-            x=presas,
-            y=predadores,
+            x=posicao,
+            y=velocidade,
             mode='lines',
             name=nome_legenda,
             line=dict(color=caso['cor'], width=2),
@@ -1256,16 +1181,16 @@ def cria_grafico_interpolacao_espaco_fases(
                 f"<b>{nome_legenda}</b><br>" +
                 f"x₀ = {caso['x0']:.3f}<br>" +
                 f"y₀ = {caso['y0']:.3f}<br>" +
-                f"Presas: %{{x:.3f}}<br>" +
-                f"Predadores: %{{y:.3f}}<br>" +
+                f"Posição: %{{x:.3f}}<br>" +
+                f"Velocidade: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
         
         # ponto inicial (condição inicial)
         fig.add_trace(go.Scatter(
-            x=[presas[0]],
-            y=[predadores[0]],
+            x=[posicao[0]],
+            y=[velocidade[0]],
             mode='markers',
             marker=dict(
                 color=caso['cor'],
@@ -1285,8 +1210,8 @@ def cria_grafico_interpolacao_espaco_fases(
         
         # ponto final (fim da trajetória)
         fig.add_trace(go.Scatter(
-            x=[presas[-1]],
-            y=[predadores[-1]],
+            x=[posicao[-1]],
+            y=[velocidade[-1]],
             mode='markers',
             marker=dict(
                 color=caso['cor'],
@@ -1298,8 +1223,8 @@ def cria_grafico_interpolacao_espaco_fases(
             showlegend=False,
             hovertemplate=(
                 f"<b>Fim da Trajetória - {nome_legenda}</b><br>" +
-                f"Presas: %{{x:.3f}}<br>" +
-                f"Predadores: %{{y:.3f}}<br>" +
+                f"Posição: %{{x:.3f}}<br>" +
+                f"Velocidade: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
@@ -1311,8 +1236,8 @@ def cria_grafico_interpolacao_espaco_fases(
             x=0.35,
             font=dict(size=16)
         ),
-        xaxis_title="Presas",
-        yaxis_title="Predadores",
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
         width=1400,
         height=1000,
         legend=dict(
@@ -1322,7 +1247,9 @@ def cria_grafico_interpolacao_espaco_fases(
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -1338,128 +1265,6 @@ def cria_grafico_interpolacao_espaco_fases(
         ),
         yaxis=dict(
             showgrid=False,
-            gridcolor='darkgray',
-            zeroline=True,
-            zerolinecolor='darkgray',
-            zerolinewidth=1,
-            title_font=dict(size=16),
-            tickfont=dict(size=16)
-        )
-    )
-    
-    return fig
-
-
-def cria_grafico_interpolacao_completo(
-    tempos_lista,
-    presas_lista,
-    predadores_lista,
-    casos_info,
-    titulo="Interpolação do Modelo: Presas e Predadores vs Tempo - Lotka-Volterra"
-):
-    """
-    Cria gráfico 2D combinando presas e predadores no tempo.
-    Trabalha com trajetórias completas previstas a partir das condições iniciais.
-    
-    Args:
-        tempos_lista: Lista de arrays com os tempos para cada caso
-        presas_lista: Lista de arrays com as presas previstas para cada caso
-        predadores_lista: Lista de arrays com os predadores previstos para cada caso
-        casos_info: Lista de dicionários com informações dos casos (nome, x0, y0, cor, nome_legenda)
-        titulo: Título do gráfico
-        
-    Returns:
-        Figura Plotly
-    """
-    fig = go.Figure()
-    
-    def clarear_cor(cor, fator=0.5):
-        """Clareia uma cor hexadecimal."""
-        cor = cor.lstrip('#')
-        r, g, b = int(cor[0:2], 16), int(cor[2:4], 16), int(cor[4:6], 16)
-        r = min(255, int(r + (255 - r) * fator))
-        g = min(255, int(g + (255 - g) * fator))
-        b = min(255, int(b + (255 - b) * fator))
-        return f'#{r:02x}{g:02x}{b:02x}'
-    
-    for i, (tempos, presas, predadores) in enumerate(zip(tempos_lista, presas_lista, predadores_lista)):
-        caso = casos_info[i]
-        
-        nome_legenda = caso.get('nome_legenda', caso['nome'])
-        
-        cor_predadores = clarear_cor(caso['cor'], fator=0.6)
-        
-        # presas
-        fig.add_trace(go.Scatter(
-            x=tempos,
-            y=presas,
-            mode='lines',
-            name=f"{nome_legenda} - Presas",
-            line=dict(color=caso['cor'], width=2, dash='solid'),
-            legendgroup=f"presas_{i}",
-            hovertemplate=(
-                f"<b>{nome_legenda} - Presas</b><br>" +
-                f"x₀ = {caso['x0']:.3f}<br>" +
-                f"y₀ = {caso['y0']:.3f}<br>" +
-                f"Tempo: %{{x:.3f}} s<br>" +
-                f"Presas: %{{y:.3f}}<br>" +
-                f"<extra></extra>"
-            )
-        ))
-        
-        # predadores
-        fig.add_trace(go.Scatter(
-            x=tempos,
-            y=predadores,
-            mode='lines',
-            name=f"{nome_legenda} - Predadores",
-            line=dict(color=cor_predadores, width=2, dash='solid'),
-            legendgroup=f"predadores_{i}",
-            hovertemplate=(
-                f"<b>{nome_legenda} - Predadores</b><br>" +
-                f"x₀ = {caso['x0']:.3f}<br>" +
-                f"y₀ = {caso['y0']:.3f}<br>" +
-                f"Tempo: %{{x:.3f}} s<br>" +
-                f"Predadores: %{{y:.3f}}<br>" +
-                f"<extra></extra>"
-            )
-        ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>",
-            x=0.35,
-            font=dict(size=16)
-        ),
-        xaxis_title="Tempo (s)",
-        yaxis_title="População",
-        width=1400,
-        height=900,
-        legend=dict(
-            title="Legenda",
-            x=1.05,
-            y=0.75,
-            xanchor='left',
-            yanchor='top',
-            bgcolor='rgba(255, 255, 255, 0.9)',
-            bordercolor='black',
-            borderwidth=1,
-            font=dict(size=14)
-        ),
-        hovermode='closest',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='darkgray',
-            zeroline=True,
-            zerolinecolor='darkgray',
-            zerolinewidth=1,
-            title_font=dict(size=16),
-            tickfont=dict(size=16)
-        ),
-        yaxis=dict(
-            showgrid=True,
             gridcolor='darkgray',
             zeroline=True,
             zerolinecolor='darkgray',
@@ -1475,7 +1280,7 @@ def cria_grafico_interpolacao_completo(
 def cria_grafico_interpolacao_pontual_mlp(
     predictions,
     y_true,
-    titulo="Interpolação Pontual de Presas e Predadores - Lotka-Volterra"
+    titulo="Interpolação Pontual de Posição e Velocidade - Oscilador de Van der Pol"
 ):
     """
     Cria gráficos de dispersão para visualizar a interpolação pontual do modelo MLP.
@@ -1491,13 +1296,12 @@ def cria_grafico_interpolacao_pontual_mlp(
     """
     fig = make_subplots(
         rows=1, cols=2,
-        subplot_titles=('Presas', 'Predadores'),
+        subplot_titles=('Posição', 'Velocidade'),
         horizontal_spacing=0.15
     )
     
     cores = ['blue', 'green']
-    nomes = ['Presas', 'Predadores']
-    unidades = ['', '']
+    nomes = ['Posição', 'Velocidade']
     
     for i in range(2):
         fig.add_trace(
@@ -1562,17 +1366,17 @@ def cria_grafico_interpolacao_pontual_mlp(
             tickfont=dict(size=16)
         )
     
-    rmse_presas = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
-    rmse_predadores = np.sqrt(mean_squared_error(y_true[:, 1], predictions[:, 1]))
-    r2_presas = r2_score(y_true[:, 0], predictions[:, 0])
-    r2_predadores = r2_score(y_true[:, 1], predictions[:, 1])
+    rmse_posicao = np.sqrt(mean_squared_error(y_true[:, 0], predictions[:, 0]))
+    rmse_velocidade = np.sqrt(mean_squared_error(y_true[:, 1], predictions[:, 1]))
+    r2_posicao = r2_score(y_true[:, 0], predictions[:, 0])
+    r2_velocidade = r2_score(y_true[:, 1], predictions[:, 1])
     
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
-                 f"<sup>RMSE Presas: {rmse_presas:.4f} | RMSE Predadores: {rmse_predadores:.4f}</sup><br>" +
-                 f"<sup>R² Presas: {r2_presas:.4f} | R² Predadores: {r2_predadores:.4f}</sup><br>",
+                 f"<sup>RMSE Posição: {rmse_posicao:.4f} | RMSE Velocidade: {rmse_velocidade:.4f}</sup><br>" +
+                 f"<sup>R² Posição: {r2_posicao:.4f} | R² Velocidade: {r2_velocidade:.4f}</sup><br>",
             x=0.45,
             y=0.92,
             font=dict(size=16)
@@ -1589,7 +1393,9 @@ def cria_grafico_interpolacao_pontual_mlp(
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
@@ -1603,17 +1409,17 @@ def cria_grafico_interpolacao_pontual_mlp(
 def cria_grafico_interpolacao_pontual_espaco_fases(
     y_pos_true, y_vel_true,
     y_pos_pred, y_vel_pred,
-    titulo="Interpolação Pontual no Espaço de Fases - Lotka-Volterra"
+    titulo="Interpolação Pontual no Espaço de Fases - Oscilador de Van der Pol"
 ):
     """
     Cria gráfico 2D mostrando a interpolação pontual do modelo no espaço de fases.
     Agora mostra trajetórias completas previstas a partir das condições iniciais.
     
     Args:
-        y_pos_true: Presas reais (pontos achatados)
-        y_vel_true: Predadores reais (pontos achatados)
-        y_pos_pred: Presas previstas (pontos achatados)
-        y_vel_pred: Predadores previstos (pontos achatados)
+        y_pos_true: Posições reais (pontos achatados)
+        y_vel_true: Velocidades reais (pontos achatados)
+        y_pos_pred: Posições previstas (pontos achatados)
+        y_vel_pred: Velocidades previstas (pontos achatados)
         titulo: Título do gráfico
         
     Returns:
@@ -1635,8 +1441,8 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         ),
         hovertemplate=(
             f"<b>MLP</b><br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
@@ -1655,29 +1461,29 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
         ),
         hovertemplate=(
             f"<b>Solução RK4</b><br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
 
-    rmse_presas = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
-    rmse_predadores = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
-    r2_presas = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
-    r2_predadores = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
+    rmse_posicao = np.sqrt(mean_squared_error(y_pos_true.flatten(), y_pos_pred.flatten()))
+    rmse_velocidade = np.sqrt(mean_squared_error(y_vel_true.flatten(), y_vel_pred.flatten()))
+    r2_posicao = r2_score(y_pos_true.flatten(), y_pos_pred.flatten())
+    r2_velocidade = r2_score(y_vel_true.flatten(), y_vel_pred.flatten())
     
     fig.update_layout(
         title=dict(
             text=f"<span style='font-size:20px; font-weight:bold;'>{titulo}</span><br><br>" +
                  f"<span style='font-size:20px; color:#555555;'>" +
-                 f"<sup>RMSE Presas: {rmse_presas:.4f} | RMSE Predadores: {rmse_predadores:.4f}</sup><br>" +
-                 f"<sup>R² Presas: {r2_presas:.4f} | R² Predadores: {r2_predadores:.4f}</sup><br>",
+                 f"<sup>RMSE Posição: {rmse_posicao:.4f} | RMSE Velocidade: {rmse_velocidade:.4f}</sup><br>" +
+                 f"<sup>R² Posição: {r2_posicao:.4f} | R² Velocidade: {r2_velocidade:.4f}</sup><br>",
             x=0.5,
             y=0.92,
             font=dict(size=16)
         ),
-        xaxis_title="Presas",
-        yaxis_title="Predadores",
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
         width=1400,
         height=1000,
         legend=dict(
@@ -1689,7 +1495,9 @@ def cria_grafico_interpolacao_pontual_espaco_fases(
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -1725,18 +1533,18 @@ def cria_grafico_interpolacao_pontual_completo(
     posicoes_reais_lista,
     velocidades_reais_lista,
     casos_info,
-    titulo="Interpolação Pontual: Presas e Predadores vs Tempo - Lotka-Volterra"
+    titulo="Interpolação Pontual: Posição e Velocidade vs Tempo - Oscilador de Van der Pol"
 ):
     """
-    Cria gráfico 2D combinando presas e predadores no tempo para interpolação pontual.
+    Cria gráfico 2D combinando posição e velocidade no tempo para interpolação pontual.
     Mostra trajetórias completas previstas a partir das condições iniciais.
     
     Args:
         tempos_lista: Lista de arrays com os tempos para cada caso
-        posicoes_previstas_lista: Lista de arrays com as presas previstas pelo MLP
-        velocidades_previstas_lista: Lista de arrays com os predadores previstos pelo MLP
-        posicoes_reais_lista: Lista de arrays com as presas reais (solução RK4)
-        velocidades_reais_lista: Lista de arrays com os predadores reais (solução RK4)
+        posicoes_previstas_lista: Lista de arrays com as posições previstas pelo MLP
+        velocidades_previstas_lista: Lista de arrays com as velocidades previstas pelo MLP
+        posicoes_reais_lista: Lista de arrays com as posições reais (solução RK4)
+        velocidades_reais_lista: Lista de arrays com as velocidades reais (solução RK4)
         casos_info: Lista de dicionários com informações dos casos (x0, y0, cor)
         titulo: Título do gráfico
         
@@ -1762,76 +1570,76 @@ def cria_grafico_interpolacao_pontual_completo(
         
         nome_sistema = f"x₀={caso['x0']:.2f}, y₀={caso['y0']:.2f}"
         
-        cor_predadores = clarear_cor(caso['cor'], fator=0.6)
+        cor_velocidade = clarear_cor(caso['cor'], fator=0.6)
         
-        # presas previstas pelo MLP
+        # posição prevista pelo MLP
         fig.add_trace(go.Scatter(
             x=tempos,
             y=pos_prev,
             mode='lines',
-            name=f"{nome_sistema} - Presas (MLP)",
+            name=f"{nome_sistema} - Posição (MLP)",
             line=dict(color=caso['cor'], width=2, dash='solid'),
-            legendgroup=f"presas_mlp_{i}",
+            legendgroup=f"posicao_mlp_{i}",
             hovertemplate=(
-                f"<b>Presas (MLP)</b><br>" +
+                f"<b>Posição (MLP)</b><br>" +
                 f"x₀ = {caso['x0']:.3f}<br>" +
                 f"y₀ = {caso['y0']:.3f}<br>" +
                 f"Tempo: %{{x:.3f}} s<br>" +
-                f"Presas Previstas: %{{y:.3f}}<br>" +
+                f"Posição Prevista: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
         
-        # presas reais (solução RK4)
+        # posição real (solução RK4)
         fig.add_trace(go.Scatter(
             x=tempos,
             y=pos_real,
             mode='lines',
-            name=f"{nome_sistema} - Presas (Real)",
+            name=f"{nome_sistema} - Posição (Real)",
             line=dict(color=caso['cor'], width=1.5, dash='dot'),
-            legendgroup=f"presas_real_{i}",
+            legendgroup=f"posicao_real_{i}",
             hovertemplate=(
-                f"<b>Presas (Real)</b><br>" +
+                f"<b>Posição (Real)</b><br>" +
                 f"x₀ = {caso['x0']:.3f}<br>" +
                 f"y₀ = {caso['y0']:.3f}<br>" +
                 f"Tempo: %{{x:.3f}} s<br>" +
-                f"Presas Real: %{{y:.3f}}<br>" +
+                f"Posição Real: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
         
-        # predadores previstos pelo MLP
+        # velocidade prevista pelo MLP
         fig.add_trace(go.Scatter(
             x=tempos,
             y=vel_prev,
             mode='lines',
-            name=f"{nome_sistema} - Predadores (MLP)",
-            line=dict(color=cor_predadores, width=2, dash='solid'),
-            legendgroup=f"predadores_mlp_{i}",
+            name=f"{nome_sistema} - Velocidade (MLP)",
+            line=dict(color=cor_velocidade, width=2, dash='solid'),
+            legendgroup=f"velocidade_mlp_{i}",
             hovertemplate=(
-                f"<b>Predadores (MLP)</b><br>" +
+                f"<b>Velocidade (MLP)</b><br>" +
                 f"x₀ = {caso['x0']:.3f}<br>" +
                 f"y₀ = {caso['y0']:.3f}<br>" +
                 f"Tempo: %{{x:.3f}} s<br>" +
-                f"Predadores Previstos: %{{y:.3f}}<br>" +
+                f"Velocidade Prevista: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
         
-        # predadores reais (solução RK4)
+        # velocidade real (solução RK4)
         fig.add_trace(go.Scatter(
             x=tempos,
             y=vel_real,
             mode='lines',
-            name=f"{nome_sistema} - Predadores (Real)",
-            line=dict(color=cor_predadores, width=1.5, dash='dot'),
-            legendgroup=f"predadores_real_{i}",
+            name=f"{nome_sistema} - Velocidade (Real)",
+            line=dict(color=cor_velocidade, width=1.5, dash='dot'),
+            legendgroup=f"velocidade_real_{i}",
             hovertemplate=(
-                f"<b>Predadores (Real)</b><br>" +
+                f"<b>Velocidade (Real)</b><br>" +
                 f"x₀ = {caso['x0']:.3f}<br>" +
                 f"y₀ = {caso['y0']:.3f}<br>" +
                 f"Tempo: %{{x:.3f}} s<br>" +
-                f"Predadores Real: %{{y:.3f}}<br>" +
+                f"Velocidade Real: %{{y:.3f}}<br>" +
                 f"<extra></extra>"
             )
         ))
@@ -1845,7 +1653,7 @@ def cria_grafico_interpolacao_pontual_completo(
             font=dict(size=16)
         ),
         xaxis_title="Tempo (s)",
-        yaxis_title="População",
+        yaxis_title="Estado",
         width=1400,
         height=900,
         legend=dict(
@@ -1857,7 +1665,9 @@ def cria_grafico_interpolacao_pontual_completo(
             bgcolor='rgba(255, 255, 255, 0.9)',
             bordercolor='black',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -1893,7 +1703,7 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
     trajetoria2_vel,
     interpolacoes_lista,
     casos_info,
-    titulo="Interpolação entre Trajetórias no Espaço de Fases - Lotka-Volterra",
+    titulo="Interpolação entre Trajetórias no Espaço de Fases - Oscilador de Van der Pol",
     cores_paleta=CORES_PALETA
 ):
     """
@@ -1902,10 +1712,10 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
     Mostra os pontos inicial e final de cada trajetória.
     
     Args:
-        trajetoria1_pos: Array com as presas da primeira trajetória
-        trajetoria1_vel: Array com os predadores da primeira trajetória
-        trajetoria2_pos: Array com as presas da segunda trajetória
-        trajetoria2_vel: Array com os predadores da segunda trajetória
+        trajetoria1_pos: Array com as posições da primeira trajetória
+        trajetoria1_vel: Array com as velocidades da primeira trajetória
+        trajetoria2_pos: Array com as posições da segunda trajetória
+        trajetoria2_vel: Array com as velocidades da segunda trajetória
         interpolacoes_lista: Lista de dicionários contendo alpha, posicoes, velocidades, x0_interp, v0_interp
         casos_info: Lista de dicionários com informações dos casos interpolados
         titulo: Título do gráfico
@@ -1929,8 +1739,8 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             f"<b>Trajetória 1</b><br>" +
             f"x₀ = {caso_info.get('x0_1', 0):.3f}<br>" +
             f"y₀ = {caso_info.get('v0_1', 0):.3f}<br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
@@ -1946,8 +1756,8 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             f"<b>Trajetória 2</b><br>" +
             f"x₀ = {caso_info.get('x0_2', 0):.3f}<br>" +
             f"y₀ = {caso_info.get('v0_2', 0):.3f}<br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
@@ -1978,8 +1788,8 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
                     f"<b>Trajetória Interpolada</b><br>" +
                     f"x₀_interp = {x0_interp:.3f}<br>" +
                     f"y₀_interp = {v0_interp:.3f}<br>" +
-                    f"Presas: %{{x:.3f}}<br>" +
-                    f"Predadores: %{{y:.3f}}<br>" +
+                    f"Posição: %{{x:.3f}}<br>" +
+                    f"Velocidade: %{{y:.3f}}<br>" +
                     f"<extra></extra>"
                 )
             ))
@@ -2078,8 +1888,8 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             y=0.92,
             font=dict(size=16)
         ),
-        xaxis_title="Presas",
-        yaxis_title="Predadores",
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
         width=1400,
         height=1000,
         legend=dict(
@@ -2091,7 +1901,9 @@ def cria_grafico_interpolacao_entre_trajetorias_espaco_fases(
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',
@@ -2127,7 +1939,7 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
     trajetoria_base_vel,
     novas_trajetorias_lista,
     casos_info,
-    titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases - Lotka-Volterra",
+    titulo="Trajetória Base vs Novas Condições Iniciais no Espaço de Fases - Oscilador de Van der Pol",
     cores_paleta=CORES_PALETA
 ):
     """
@@ -2136,8 +1948,8 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
     Mostra os pontos inicial e final de cada trajetória.
     
     Args:
-        trajetoria_base_pos: Array com as presas da trajetória base
-        trajetoria_base_vel: Array com os predadores da trajetória base
+        trajetoria_base_pos: Array com as posições da trajetória base
+        trajetoria_base_vel: Array com as velocidades da trajetória base
         novas_trajetorias_lista: Lista de dicionários contendo posicoes, velocidades, x0, v0, variacao_id
         casos_info: Dicionário com informações da trajetória base
         titulo: Título do gráfico
@@ -2161,8 +1973,8 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
             f"<b>Trajetória Base</b><br>" +
             f"x₀ = {caso_info.get('x0_base', 0):.3f}<br>" +
             f"y₀ = {caso_info.get('v0_base', 0):.3f}<br>" +
-            f"Presas: %{{x:.3f}}<br>" +
-            f"Predadores: %{{y:.3f}}<br>" +
+            f"Posição: %{{x:.3f}}<br>" +
+            f"Velocidade: %{{y:.3f}}<br>" +
             f"<extra></extra>"
         )
     ))
@@ -2193,8 +2005,8 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
                     f"<b>Trajetória Interpolada</b><br>" +
                     f"x₀ = {x0_novo:.3f}<br>" +
                     f"y₀ = {v0_novo:.3f}<br>" +
-                    f"Presas: %{{x:.3f}}<br>" +
-                    f"Predadores: %{{y:.3f}}<br>" +
+                    f"Posição: %{{x:.3f}}<br>" +
+                    f"Velocidade: %{{y:.3f}}<br>" +
                     f"<extra></extra>"
                 )
             ))
@@ -2271,8 +2083,8 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
             y=0.92,
             font=dict(size=16)
         ),
-        xaxis_title="Presas",
-        yaxis_title="Predadores",
+        xaxis_title="Posição",
+        yaxis_title="Velocidade",
         width=1400,
         height=1000,
         legend=dict(
@@ -2284,7 +2096,9 @@ def cria_grafico_interpolacao_trajetorias_espaco_fases(
             bgcolor='rgba(255, 255, 255, 0.95)',
             bordercolor='gray',
             borderwidth=1,
-            font=dict(size=14)
+            font=dict(size=14),
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         ),
         hovermode='closest',
         plot_bgcolor='white',

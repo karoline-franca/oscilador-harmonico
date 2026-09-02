@@ -1,5 +1,5 @@
-"""oscilador_lotka_volterra file for ensuring the package is executable
-as `oscilador-lotka-volterra` and `python -m oscilador_lotka_volterra`
+"""oscilador_van_der_pol file for ensuring the package is executable
+as `oscilador-van-der-pol` and `python -m oscilador_van_der_pol`
 """
 import sys
 from pathlib import Path

@@ -1,5 +1,5 @@
 """
-Definição da arquitetura do MLP para previsão de trajetórias completas do oscilador de Lotka-Volterra.
+Definição da arquitetura do MLP para previsão de trajetórias completas do oscilador de Van der Pol.
 """
 
 import numpy as np
@@ -9,9 +9,9 @@ import torch.nn as nn
 
 class MLP(nn.Module):
     """
-    Multi-Layer Perceptron para prever trajetórias completas do Lotka-Volterra.
+    Multi-Layer Perceptron para prever trajetórias completas do oscilador de Van der Pol.
     
-    Entrada: [x0, y0] - condições iniciais (presas, predadores)
+    Entrada: [x0, y0] - condições iniciais (posição, velocidade)
     Saída: [x_0, y_0, x_1, y_1, ..., x_N, y_N] - trajetória completa
     """
 
@@ -19,7 +19,7 @@ class MLP(nn.Module):
                  num_timesteps=127, activation='relu', seed=None):
         """
         Args:
-            input_dim: Dimensão da entrada (2: x0, y0)
+            input_dim: Dimensão da entrada (2: x0, y0) - [posição inicial, velocidade inicial]
             hidden_dims: Dimensões das camadas ocultas
             output_dim: Dimensão da saída (2 * num_timesteps)
             num_timesteps: Número de instantes de tempo na trajetória
@@ -72,7 +72,7 @@ class MLP(nn.Module):
         Forward pass.
         
         Args:
-            x: tensor de entrada (batch_size, input_dim) - [x0, y0]
+            x: tensor de entrada (batch_size, input_dim) - [x0, y0] (posição inicial, velocidade inicial)
             
         Returns:
             tensor de saída (batch_size, output_dim) - [x_0, y_0, x_1, y_1, ..., x_N, y_N]
@@ -84,21 +84,21 @@ class MLP(nn.Module):
         Obtém a trajetória completa para uma condição inicial.
         
         Args:
-            x0: População inicial de presas (float)
-            y0: População inicial de predadores (float)
+            x0: Posição inicial (float)
+            y0: Velocidade inicial (float)
             tempos: Array com os tempos (opcional, apenas para referência)
             
         Returns:
-            dict com 'presas', 'predadores' e 'tempos'
+            dict com 'posicao', 'velocidade' e 'tempos'
         """
         self.eval()
         with torch.no_grad():
             x = torch.tensor([[x0, y0]], dtype=torch.float32)
             output = self.forward(x).numpy().flatten()
         
-        # separa presas e predadores (intercalados)
-        presas = output[0::2]
-        predadores = output[1::2]
+        # separa posição e velocidade (intercalados)
+        posicao = output[0::2]
+        velocidade = output[1::2]
         
         # se tempos não foi fornecido, cria um array baseado no número de pontos
         if tempos is None:
@@ -107,8 +107,8 @@ class MLP(nn.Module):
             tempos = np.linspace(tempos[0], tempos[-1], self.num_timesteps)
         
         return {
-            'presas': presas,
-            'predadores': predadores,
+            'posicao': posicao,
+            'velocidade': velocidade,
             'tempos': tempos
         }
     
@@ -117,21 +117,21 @@ class MLP(nn.Module):
         Obtém trajetórias completas para múltiplas condições iniciais.
         
         Args:
-            x0_batch: Array de populações iniciais de presas
-            y0_batch: Array de populações iniciais de predadores
+            x0_batch: Array de posições iniciais
+            y0_batch: Array de velocidades iniciais
             tempos: Array com os tempos (opcional)
             
         Returns:
-            dict com 'presas', 'predadores' e 'tempos'
+            dict com 'posicao', 'velocidade' e 'tempos'
         """
         self.eval()
         with torch.no_grad():
             x = torch.tensor(np.column_stack([x0_batch, y0_batch]), dtype=torch.float32)
             outputs = self.forward(x).numpy()
         
-        # separa presas e predadores para cada trajetória
-        presas = outputs[:, 0::2]
-        predadores = outputs[:, 1::2]
+        # separa posição e velocidade para cada trajetória
+        posicao = outputs[:, 0::2]
+        velocidade = outputs[:, 1::2]
         
         if tempos is None:
             tempos = np.arange(self.num_timesteps)
@@ -139,7 +139,7 @@ class MLP(nn.Module):
             tempos = np.linspace(tempos[0], tempos[-1], self.num_timesteps)
         
         return {
-            'presas': presas,
-            'predadores': predadores,
+            'posicao': posicao,
+            'velocidade': velocidade,
             'tempos': tempos
         }

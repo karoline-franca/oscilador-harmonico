@@ -1,7 +1,7 @@
 [project]
-name = "oscilador_lotka_volterra"
+name = "oscilador_van_der_pol"
 version = "0.1.0"
-description = "Oscilador Lotka-Volterra com RK4 e PyTorch"
+description = "Oscilador Van der Pol com RK4 e PyTorch"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -16,11 +16,11 @@ dependencies = [
 ]
 
 [project.entry-points."kedro.project_plugins"]
-oscilador_lotka_volterra = "oscilador_lotka_volterra.plugins"
+oscilador_van_der_pol = "oscilador_van_der_pol.plugins"
 
 [tool.kedro]
-package_name = "oscilador_lotka_volterra"
-project_name = "oscilador_lotka_volterra"
+package_name = "oscilador_van_der_pol"
+project_name = "oscilador_van_der_pol"
 kedro_init_version = "1.3.0"
 
 [build-system]
