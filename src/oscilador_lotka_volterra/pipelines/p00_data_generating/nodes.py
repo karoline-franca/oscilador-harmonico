@@ -5,7 +5,7 @@ Nodes do pipeline Kedro para o oscilador de Lotka-Volterra.
 import numpy as np
 import pandas as pd
 import torch
-from oscilador_lotka_volterra.utils import cria_grafico_3d, cria_grafico_2d
+from oscilador_lotka_volterra.utils import cria_grafico_2d
 import os
 from datetime import datetime
 from typing import Dict, Any, Tuple
@@ -168,7 +168,7 @@ def cria_visualizacoes_node(
     parametros_oscilador: pd.DataFrame
 ) -> None:
     """
-    Cria visualizações 2D e 3D do espaço de fases.
+    Cria visualizações 2D do espaço de fases.
     """
     data_version = os.environ.get('DATA_VERSION', 'base_01')
     output_dir = f"data/05_model_input/{data_version}"
@@ -176,11 +176,6 @@ def cria_visualizacoes_node(
     
     descricoes = parametros_oscilador['descricao_sistema'].tolist()
     
-    fig3d = cria_grafico_3d(solucao, descricoes)
     fig2d = cria_grafico_2d(solucao, descricoes)
-    
-    fig3d.write_html(f"{output_dir}/espaco_fases_3d.html")
     fig2d.write_html(f"{output_dir}/espaco_fases_2d.html")
-    
     fig2d.show()
-    fig3d.show()
