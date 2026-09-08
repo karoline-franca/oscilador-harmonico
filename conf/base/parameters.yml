@@ -1,12 +1,12 @@
 simulation:
   n_sistemas: 1
-  n_condicoes_iniciais: 1000
+  n_condicoes_iniciais: 500
   num_periodos: 1
   dt: 0.1
   save_every: 2
 
 intervals:
-  parametro_mu: 0.1                   # parâmetro de não linearidade
+  parametro_mu: -0.1                  # parâmetro de não linearidade
   x0_min: -3.0                        # posição inicial mínima
   x0_max: 3.0                         # posição inicial máxima
   y0_min: -3.0                        # velocidade inicial mínima
