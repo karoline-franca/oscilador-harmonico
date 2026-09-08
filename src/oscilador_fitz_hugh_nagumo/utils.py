@@ -379,7 +379,7 @@ def cria_grafico_distribuicao_dados(
     y_recuperacao_val_flat = y_recuperacao_val.flatten() if y_recuperacao_val.ndim > 1 else y_recuperacao_val
     y_potencial_test_flat = y_potencial_test.flatten() if y_potencial_test.ndim > 1 else y_potencial_test
     y_recuperacao_test_flat = y_recuperacao_test.flatten() if y_recuperacao_test.ndim > 1 else y_recuperacao_test
-    
+
     # treino
     fig.add_trace(go.Scatter(
         x=y_potencial_train_flat,
@@ -388,8 +388,8 @@ def cria_grafico_distribuicao_dados(
         name='Dados de Treino (70%)',
         marker=dict(
             color='#2E7D32',
-            size=3,
-            opacity=0.5,
+            size=4,
+            opacity=0.9,
             symbol='circle'
         ),
         hovertemplate=(
@@ -407,9 +407,9 @@ def cria_grafico_distribuicao_dados(
         mode='markers',
         name='Dados de Validação (20%)',
         marker=dict(
-            color='#4A148C',
-            size=3,
-            opacity=0.5,
+            color='#0D47A1',
+            size=4,
+            opacity=0.9,
             symbol='square'
         ),
         hovertemplate=(
@@ -427,9 +427,9 @@ def cria_grafico_distribuicao_dados(
         mode='markers',
         name='Dados de Teste (10%)',
         marker=dict(
-            color='#B71C1C',
-            size=3,
-            opacity=0.5,
+            color='#F57F17',
+            size=4,
+            opacity=0.9,
             symbol='diamond'
         ),
         hovertemplate=(
